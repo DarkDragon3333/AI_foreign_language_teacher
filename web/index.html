@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Учитель языков</title>
+  <link rel="icon" href="data:,">
+  <script>
+    // тема ставится до отрисовки, чтобы страница не мигала
+    try { document.documentElement.dataset.theme = localStorage.getItem('tutor-theme') || 'blue'; }
+    catch (e) { document.documentElement.dataset.theme = 'blue'; }
+  </script>
+  <link rel="stylesheet" href="/css/app.css?v=9">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Учитель языков <span class="brand-sub">English</span></div>
+    <nav class="tabs" aria-label="Разделы">
+      <button id="tab-lesson" type="button" class="tab" aria-current="page">Урок</button>
+      <button id="tab-journal" type="button" class="tab">Мои ошибки</button>
+    </nav>
+    <div class="topbar-right">
+      <label class="theme-picker">Тема
+        <select id="theme">
+          <option value="blue">Синий</option>
+          <option value="charcoal">Уголь</option>
+          <option value="amber">Янтарь</option>
+          <option value="indigo">Индиго</option>
+          <option value="graphite">Графит</option>
+        </select>
+      </label>
+      <span id="health" class="health" title="Состояние сервисов">проверяю…</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Экран 1: начало урока -->
+    <section id="start" class="card" hidden>
+      <h1>Новый урок</h1>
+      <form id="start-form">
+        <label>Уровень
+          <div id="level-picker" class="segmented" role="radiogroup" aria-label="Уровень CEFR"></div>
+        </label>
+        <p id="level-note" class="note" hidden></p>
+        <label>Режим
+          <select id="mode">
+            <option value="conversation">Разговор — свободный диалог с исправлениями</option>
+            <option value="explain">Объяснение — разобрать правило</option>
+            <option value="correct">Проверка — исправить мой текст</option>
+            <option value="drill">Тренировка — короткие упражнения</option>
+          </select>
+        </label>
+        <label>Тема <span class="muted">(необязательно)</span>
+          <input id="topic" type="text" maxlength="200" placeholder="travel, job interview, Present Perfect…" autocomplete="off">
+        </label>
+        <button type="submit" class="primary">Начать урок</button>
+      </form>
+    </section>
+
+    <!-- Экран 2: чат урока -->
+    <section id="lesson" hidden>
+      <div class="lesson-bar">
+        <div class="lesson-info">
+          <span id="lesson-mode" class="chip chip-plain"></span>
+          <span id="lesson-topic" class="lesson-topic"></span>
+        </div>
+        <div class="lesson-actions">
+          <div class="level-stepper" role="group" aria-label="Уровень урока">
+            <button id="easier" type="button" title="Понизить уровень">− Проще</button>
+            <span class="level-now"><span class="level-caption">уровень</span> <span id="lesson-level" class="chip" aria-live="polite"></span></span>
+            <button id="harder" type="button" title="Повысить уровень">Сложнее +</button>
+          </div>
+          <button id="end" type="button">Завершить</button>
+        </div>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <p id="status" class="status" hidden><span id="status-text"></span> <button id="retry" type="button" hidden>Повторить</button></p>
+
+      <form id="chat-form" class="composer">
+        <textarea id="input" rows="2" maxlength="2000" placeholder="Напишите ответ по-английски. Enter — отправить, Shift+Enter — новая строка"></textarea>
+        <div class="composer-buttons">
+          <button id="hint" type="button" title="Учитель подскажет: сначала намёк, потом правило, пример и ответ">Подсказка <span id="hint-level"></span></button>
+          <button id="send" type="submit" class="primary">Отправить</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Экран 3: журнал ошибок -->
+    <section id="journal" class="card" hidden>
+      <h1>Мои ошибки</h1>
+      <p class="note">Правила, на которых вы ошибались в уроках. Чем выше строка, тем чаще ошибка.</p>
+      <p id="journal-empty" class="muted" hidden>Пока пусто: ошибки появятся здесь после первых исправлений в уроке.</p>
+      <table id="journal-table" class="journal" hidden>
+        <thead><tr><th>Правило</th><th>Пример из ваших фраз</th><th class="num">Раз</th><th>Последний раз</th></tr></thead>
+        <tbody id="journal-rows"></tbody>
+      </table>
+    </section>
+
+    <p id="fatal" class="fatal" hidden></p>
+  </main>
+
+  <script type="module" src="/js/main.js?v=9"></script>
+</body>
+</html>
