@@ -9,6 +9,7 @@ import study.ai_foreign_language_teacher.llm.LlmClient;
 import study.ai_foreign_language_teacher.memory.StorageHealth;
 import study.ai_foreign_language_teacher.memory.rules.EmbeddingClient;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
+import study.ai_foreign_language_teacher.speech.SttClient;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,12 +23,15 @@ public class HealthController {
     private final StorageHealth storage;
     private final GrammarChecker checker;
     private final EmbeddingClient embeddings;
+    private final SttClient speech;
 
-    public HealthController(LlmClient llm, StorageHealth storage, GrammarChecker checker, EmbeddingClient embeddings) {
+    public HealthController(LlmClient llm, StorageHealth storage, GrammarChecker checker, EmbeddingClient embeddings,
+                            SttClient speech) {
         this.llm = llm;
         this.storage = storage;
         this.checker = checker;
         this.embeddings = embeddings;
+        this.speech = speech;
     }
 
     @GetMapping("/health")
@@ -43,7 +47,9 @@ public class HealthController {
         // поиск карточек по смыслу не обязателен: без него урок жив, карточки находятся по id LanguageTool
         boolean embedUp = !embeddings.enabled() || embeddings.ready();
         components.put("embed", component(embedUp, embeddings.statusDetail()));
-        // stt, tts добавятся на шагах 5, 6
+        boolean sttUp = !speech.enabled() || speech.ready();
+        components.put("stt", component(sttUp, speech.statusDetail()));
+        // tts добавится на шаге 6
 
         boolean up = ollama.up() && storageUp && lt.up();
         Map<String, Object> body = new LinkedHashMap<>();

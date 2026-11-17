@@ -8,6 +8,7 @@ services:
       TUTOR_OLLAMA_BASE_URL: http://ollama:11434
       TUTOR_LANGUAGETOOL_BASE_URL: http://languagetool:8010
       TUTOR_EMBED_BASE_URL: http://embed:9003
+      TUTOR_STT_BASE_URL: http://stt:9001
       TUTOR_OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e4b-it-qat}
       TUTOR_LESSON_DEFAULT_CEFR: ${DEFAULT_CEFR:-B1}
     networks:
@@ -76,6 +77,20 @@ services:
       - tutor-net
     restart: unless-stopped
 
+  # Распознавание речи на CPU. Видеопамять остаётся у модели урока.
+  stt:
+    build: ./stt
+    environment:
+      WHISPER_MODEL: small
+      COMPUTE_TYPE: int8
+      DEVICE: cpu
+      WHISPER_DOWNLOAD_ROOT: /models
+    volumes:
+      - whisper_models:/models
+    networks:
+      - tutor-net
+    restart: unless-stopped
+
   # Проверка грамматики на CPU, без n-gram (правило архитектуры: ~1 ГБ RAM)
   languagetool:
     image: erikvl87/languagetool
@@ -115,6 +130,7 @@ volumes:
   pgdata:
   ollama_models:
   embed_models:
+  whisper_models:
 
 networks:
   tutor-net:

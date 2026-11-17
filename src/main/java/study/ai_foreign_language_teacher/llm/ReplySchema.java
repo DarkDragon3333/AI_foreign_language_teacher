@@ -10,8 +10,10 @@ import java.util.Map;
  * пустые значения потом убирает ReplyParser.
  *
  * Поля объявлены в алфавитном порядке, и это же порядок генерации: answer_en идёт первым,
- * поэтому ученик видит ответ сразу, пока модель дописывает исправление. Уровень, режим и ступень
- * подсказки в схему не входят — их всё равно задаёт приложение, а модель тратила на них токены.
+ * поэтому ученик видит ответ сразу, пока модель дописывает исправление. follow_up_ru стоит
+ * сразу после follow_up_question: перевод вопроса пишется, когда вопрос уже есть в тексте.
+ * Уровень, режим и ступень подсказки в схему не входят — их всё равно задаёт приложение,
+ * а модель тратила на них токены.
  */
 public final class ReplySchema {
 
@@ -38,7 +40,8 @@ public final class ReplySchema {
                 "answer_ru", string(),
                 "correction", correction,
                 "explanation", explanation,
-                "follow_up_question", string()));
+                "follow_up_question", string(),
+                "follow_up_ru", string()));
     }
 
     private static Map<String, Object> string() {

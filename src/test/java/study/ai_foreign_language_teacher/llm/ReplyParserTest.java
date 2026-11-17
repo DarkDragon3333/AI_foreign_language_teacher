@@ -104,6 +104,48 @@ class ReplyParserTest {
     }
 
     @Test
+    void russianCoversTheQuestionAsWellAsTheAnswer() {
+        TeacherReply r = parse("""
+                {"answer_en":"I love to travel too! It is very exciting.",
+                 "answer_ru":"Мне тоже нравится путешествовать! Это очень интересно.",
+                 "follow_up_question":"Where would you like to go?",
+                 "follow_up_ru":"Куда бы ты хотел поехать?"}""");
+        assertEquals("I love to travel too! It is very exciting. Where would you like to go?", r.displayText());
+        assertEquals("Мне тоже нравится путешествовать! Это очень интересно. Куда бы ты хотел поехать?", r.replyRu());
+    }
+
+    @Test
+    void openingTurnTranslatesTheQuestionWhenTheAnswerIsEmpty() {
+        TeacherReply r = parse("""
+                {"answer_en":"","answer_ru":"",
+                 "follow_up_question":"Hello! Do you like to travel?",
+                 "follow_up_ru":"Привет! Тебе нравится путешествовать?"}""");
+        assertEquals("Hello! Do you like to travel?", r.replyEn());
+        assertNull(r.nextPrompt());
+        assertEquals("Привет! Тебе нравится путешествовать?", r.replyRu());
+    }
+
+    @Test
+    void russianQuestionIsNotRepeatedWhenTheAnswerAlreadyContainsIt() {
+        TeacherReply r = parse("""
+                {"answer_en":"Great! What do you like about Greece?",
+                 "answer_ru":"Отлично! Что тебе нравится в Греции?",
+                 "follow_up_question":"What do you like about Greece?",
+                 "follow_up_ru":"Что тебе нравится в Греции?"}""");
+        assertNull(r.nextPrompt());
+        assertEquals("Отлично! Что тебе нравится в Греции?", r.replyRu());
+    }
+
+    @Test
+    void questionTranslationIsDroppedWhenThereIsNoQuestion() {
+        TeacherReply r = parse("""
+                {"answer_en":"Nice trip!","answer_ru":"Хорошая поездка!",
+                 "follow_up_question":"","follow_up_ru":"Куда бы ты хотел поехать?"}""");
+        assertEquals("Хорошая поездка!", r.replyRu());
+        assertNull(r.nextPrompt());
+    }
+
+    @Test
     void emptyCorrectionInTheNewFormatIsDropped() {
         TeacherReply r = parse("{\"answer_en\":\"Good!\",\"correction\":{\"errors\":[],\"fixed_text\":\"\"},\"follow_up_question\":\"And you?\"}");
         assertNull(r.correction());

@@ -1,6 +1,6 @@
-import { api, chatTurn } from './api.js?v=11';
-import { userMessage, teacherMessage, teacherPlaceholder } from './render.js?v=11';
-import { openReview, refreshReviewCount } from './review.js?v=11';
+import { api, chatTurn, transcribe } from './api.js?v=12';
+import { userMessage, teacherMessage, teacherPlaceholder } from './render.js?v=12';
+import { openReview, refreshReviewCount } from './review.js?v=12';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const MODE_NAMES = { conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка' };
@@ -166,7 +166,7 @@ function applySession(session) {
 
 function setBusy(busy) {
   state.busy = busy;
-  for (const id of ['send', 'hint', 'end']) $(id).disabled = busy;
+  for (const id of ['send', 'hint', 'end', 'talk']) $(id).disabled = busy;
   if (state.session) applySession(state.session);
 }
 
@@ -177,6 +177,85 @@ function setStatus(text, isError, canRetry) {
   $('retry').hidden = !canRetry;
   node.classList.toggle('error', !!isError);
 }
+
+// «Нажми и скажи»: короткое нажатие включает запись, повторное отправляет.
+// Удержание дольше 0,4 с отправляет фразу в момент отпускания кнопки.
+const talk = { recorder: null, chunks: [], startedAt: 0, stream: null, timer: null, arming: false };
+
+function setTalking(on) {
+  const button = $('talk');
+  button.setAttribute('aria-pressed', String(on));
+  button.textContent = on ? 'Говорю…' : 'Говорить';
+}
+
+async function startTalk() {
+  if (state.busy || talk.recorder || talk.arming) return;
+  talk.arming = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    talk.arming = false;
+    setStatus('Нет доступа к микрофону', true);
+    return;
+  }
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+  const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  talk.chunks = [];
+  talk.stream = stream;
+  talk.recorder = recorder;
+  talk.startedAt = Date.now();
+  talk.arming = false;
+  recorder.ondataavailable = (event) => { if (event.data.size) talk.chunks.push(event.data); };
+  recorder.start();
+  setTalking(true);
+  setStatus('Слушаю… отпустите кнопку или нажмите ещё раз');
+  talk.timer = setTimeout(() => { if (talk.recorder) stopTalk(); }, 30000);
+}
+
+function stopTalk() {
+  const recorder = talk.recorder;
+  if (!recorder || recorder.state === 'inactive') return;
+  clearTimeout(talk.timer);
+  const startedAt = talk.startedAt;
+  talk.recorder = null;
+  recorder.onstop = async () => {
+    talk.stream.getTracks().forEach((track) => track.stop());
+    talk.stream = null;
+    setTalking(false);
+    const blob = new Blob(talk.chunks, { type: recorder.mimeType || 'audio/webm' });
+    talk.chunks = [];
+    if (Date.now() - startedAt < 400 || blob.size < 800) {
+      setStatus('Слишком короткая запись', true);
+      return;
+    }
+    setStatus('Распознаю…');
+    try {
+      const text = await transcribe(blob);
+      setStatus('');
+      turn(text, false);
+    } catch (e) {
+      setStatus(e.message, true);
+    }
+  };
+  recorder.stop();
+}
+
+const talkButton = $('talk');
+talkButton.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || state.busy) return;
+  event.preventDefault();
+  if (talk.recorder) {
+    stopTalk();
+    return;
+  }
+  talkButton.setPointerCapture(event.pointerId);
+  startTalk();
+});
+talkButton.addEventListener('pointerup', () => {
+  if (talk.recorder && Date.now() - talk.startedAt > 400) stopTalk();
+});
+talkButton.addEventListener('contextmenu', (event) => event.preventDefault());
 
 // первый ход урока не удался (например, модель ещё не скачана) — даём повторить его
 $('retry').addEventListener('click', () => turn('', false));

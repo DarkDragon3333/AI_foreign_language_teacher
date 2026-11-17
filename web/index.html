@@ -10,7 +10,7 @@
     try { document.documentElement.dataset.theme = localStorage.getItem('tutor-theme') || 'blue'; }
     catch (e) { document.documentElement.dataset.theme = 'blue'; }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=11">
+  <link rel="stylesheet" href="/css/app.css?v=12">
 </head>
 <body>
   <header class="topbar">
@@ -82,7 +82,10 @@
         <textarea id="input" rows="2" maxlength="2000" placeholder="Напишите ответ по-английски. Enter — отправить, Shift+Enter — новая строка"></textarea>
         <div class="composer-buttons">
           <button id="hint" type="button" title="Учитель подскажет: сначала намёк, потом правило, пример и ответ">Подсказка <span id="hint-level"></span></button>
-          <button id="send" type="submit" class="primary">Отправить</button>
+          <div class="composer-send">
+            <button id="talk" type="button" aria-pressed="false" title="Нажмите и говорите. Удерживайте кнопку или нажмите ещё раз, чтобы отправить">Говорить</button>
+            <button id="send" type="submit" class="primary">Отправить</button>
+          </div>
         </div>
       </form>
     </section>
@@ -130,6 +133,6 @@
     <p id="fatal" class="fatal" hidden></p>
   </main>
 
-  <script type="module" src="/js/main.js?v=11"></script>
+  <script type="module" src="/js/main.js?v=12"></script>
 </body>
 </html>

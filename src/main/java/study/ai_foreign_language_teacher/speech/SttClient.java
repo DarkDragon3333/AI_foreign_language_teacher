@@ -1,0 +1,104 @@
+package study.ai_foreign_language_teacher.speech;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import study.ai_foreign_language_teacher.config.TutorProperties;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.UUID;
+
+/** Клиент сервиса распознавания. Сервис на CPU и не трогает видеокарту. */
+@Component
+public class SttClient {
+
+    private static final Logger log = LoggerFactory.getLogger(SttClient.class);
+
+    private final TutorProperties.Stt cfg;
+    private final ObjectMapper mapper;
+    private final HttpClient http;
+
+    public SttClient(TutorProperties props, ObjectMapper mapper) {
+        this.cfg = props.stt();
+        this.mapper = mapper;
+        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(400)).build();
+    }
+
+    public boolean enabled() {
+        return cfg.enabled();
+    }
+
+    /** Текст фразы. Пустая строка — в записи не нашлось слов. */
+    public String transcribe(byte[] audio, String contentType) {
+        if (!cfg.enabled()) {
+            throw new IllegalArgumentException("Распознавание речи выключено");
+        }
+        if (audio == null || audio.length == 0) {
+            throw new IllegalArgumentException("Пустая запись");
+        }
+        String boundary = "----tutor-" + UUID.randomUUID();
+        String type = contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType;
+        byte[] body = multipart(boundary, audio, type);
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(cfg.baseUrl() + "/transcribe"))
+                    .timeout(cfg.timeout())
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new IllegalArgumentException("Распознавание не ответило: HTTP " + response.statusCode());
+            }
+            JsonNode text = mapper.readTree(response.body()).path("text");
+            return text.isMissingNode() || text.isNull() ? "" : text.asString("").strip();
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("STT request failed: {}", e.toString());
+            throw new IllegalArgumentException("Распознавание речи сейчас недоступно");
+        }
+    }
+
+    public boolean ready() {
+        if (!cfg.enabled()) {
+            return false;
+        }
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(cfg.baseUrl() + "/health"))
+                    .timeout(Duration.ofSeconds(2))
+                    .GET()
+                    .build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() == 200 && response.body().contains("\"up\"");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String statusDetail() {
+        if (!cfg.enabled()) {
+            return "выключен";
+        }
+        return ready() ? cfg.baseUrl() : "не отвечает";
+    }
+
+    private static byte[] multipart(String boundary, byte[] audio, String contentType) {
+        String head = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"speech.webm\"\r\n"
+                + "Content-Type: " + contentType + "\r\n\r\n";
+        String tail = "\r\n--" + boundary + "--\r\n";
+        byte[] headBytes = head.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] tailBytes = tail.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] body = new byte[headBytes.length + audio.length + tailBytes.length];
+        System.arraycopy(headBytes, 0, body, 0, headBytes.length);
+        System.arraycopy(audio, 0, body, headBytes.length, audio.length);
+        System.arraycopy(tailBytes, 0, body, headBytes.length + audio.length, tailBytes.length);
+        return body;
+    }
+}

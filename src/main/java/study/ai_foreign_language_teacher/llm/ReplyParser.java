@@ -110,8 +110,30 @@ public class ReplyParser {
         TeacherReply.Explanation explanation = w.explanation() == null ? null : new TeacherReply.Explanation(
                 plain(w.explanation().briefRule()), plain(w.explanation().exampleCorrect()), plain(w.explanation().exampleWrong()),
                 null, null);
-        return new TeacherReply(plain(w.answerEn()), plain(w.answerRu()), correction, explanation,
-                plain(w.followUpQuestion()), List.of(), null, null, null);
+        String question = plain(w.followUpQuestion());
+        // answer_ru пишется до вопроса и переводит только ответ. Вопрос переводится в follow_up_ru.
+        String russian = blank(question) ? plain(w.answerRu()) : joinRu(plain(w.answerRu()), plain(w.followUpRu()));
+        return new TeacherReply(plain(w.answerEn()), russian, correction, explanation,
+                question, List.of(), null, null, null);
+    }
+
+    /**
+     * Склеивает перевод ответа и перевод вопроса. Если модель уже включила вопрос в перевод ответа,
+     * второй раз его не добавляем.
+     */
+    static String joinRu(String answerRu, String questionRu) {
+        if (blank(questionRu)) {
+            return blank(answerRu) ? null : answerRu;
+        }
+        if (blank(answerRu)) {
+            return questionRu;
+        }
+        String normAnswer = answerRu.toLowerCase().replaceAll("\\s+", " ");
+        String normQuestion = questionRu.toLowerCase().replaceAll("\\s+", " ").replaceAll("[?!.… ]+$", "");
+        if (!normQuestion.isEmpty() && normAnswer.contains(normQuestion)) {
+            return answerRu;
+        }
+        return answerRu.strip() + " " + questionRu.strip();
     }
 
     private static String plain(String s) {

@@ -12,15 +12,17 @@ import java.util.List;
  * сортирует поля схемы по алфавиту. Со старыми именами (reply_en, correction, cards_to_review…) модель была
  * вынуждена сначала писать исправление и служебные поля, а сам ответ — в самом конце, причём исправленную
  * фразу раньше списка ошибок. Теперь порядок одинаковый на любом движке:
- * ответ → перевод → ошибки → исправленная фраза → правило → следующий вопрос.
- * Старые имена оставлены как псевдонимы.
+ * ответ → перевод ответа → ошибки → исправленная фраза → правило → следующий вопрос → перевод вопроса.
+ * Старые имена оставлены как псевдонимы. answer_ru переводит только answer_en: к моменту его генерации
+ * вопроса ещё нет. follow_up_ru переводит follow_up_question и дописывается к русскому тексту в разборе.
  */
 public record LlmReply(
         @JsonProperty("answer_en") @JsonAlias("reply_en") String answerEn,
         @JsonProperty("answer_ru") @JsonAlias("reply_ru") String answerRu,
         @JsonProperty("correction") Correction correction,
         @JsonProperty("explanation") Explanation explanation,
-        @JsonProperty("follow_up_question") @JsonAlias("next_prompt") String followUpQuestion) {
+        @JsonProperty("follow_up_question") @JsonAlias("next_prompt") String followUpQuestion,
+        @JsonProperty("follow_up_ru") String followUpRu) {
 
     public record Correction(
             @JsonProperty("errors") List<ErrorItem> errors,

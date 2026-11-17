@@ -88,12 +88,13 @@ public class PromptBuilder {
                 ALWAYS
                 - Write correct, natural English. Never repeat the learner's mistake in your own words.
                 - answer_en is YOUR OWN short reaction to what the learner said (1-2 sentences): answer their question, comment on it, or encourage them. It is not a corrected copy of the learner's message: never repeat or rephrase the learner's sentence in answer_en.
-                - answer_ru is Russian text. Leave it empty unless the level rules or the support rules ask for it.
+                - answer_ru and follow_up_ru are Russian. Leave both empty unless the level rules or the support rules ask for Russian.
                 - If the learner asks you something, answer it in answer_en first.
                 - If the learner's last message has a real mistake, fill "correction". First "errors": one item per mistake (fragment = the wrong words copied exactly from the learner's message, rule = short rule name, tip = one short tip). Then "fixed_text": the learner's whole message with only those mistakes fixed. Never shorten, split or rephrase a correct sentence: style is not a mistake. If there is nothing to fix, leave errors empty and fixed_text empty.
                 - Fill "explanation" only when you explain a rule or the learner asks why: brief_rule = the rule in one or two short sentences, example_correct = one correct example, example_wrong = one typical wrong example. Otherwise leave its fields empty.
                 - Only correct what you are sure about. Do not invent grammar rules.
                 - follow_up_question is exactly one NEW question or task that moves the lesson forward. Never write the same sentence in answer_en and follow_up_question, and never ask a question you have already asked.
+                - When Russian is required, translate the whole message the learner will read. answer_ru translates every sentence of answer_en and nothing else. follow_up_ru translates all of follow_up_question and nothing else. Do not skip a sentence and do not add anything that is not in the English. If follow_up_question is empty, follow_up_ru is empty.
                 - Plain text only: no markdown, no asterisks.
                 """.formatted(session.cefr(), session.cefr(), session.cefr().teachingGuidance(),
                 session.mode().json(), session.mode().instruction(), topic));
@@ -103,7 +104,9 @@ public class PromptBuilder {
                 EXAMPLE
                 Learner: "I like play football with my friends."
                 Good: answer_en = "That sounds fun! Football is a great way to see friends.", follow_up_question = "How often do you play?"
+                When Russian is required, same turn: answer_ru = "Звучит здорово! Футбол — отличный способ видеться с друзьями.", follow_up_ru = "Как часто ты играешь?"
                 Bad: answer_en = "I like to play football with my friends." (it only repeats the learner)
+                Bad: answer_ru that stops before the question, or follow_up_ru left empty while follow_up_question is filled.
                 """);
         sb.append("\nSUPPORT\n").append(supportRule(session.supportLevel(), stuck));
         sb.append("\nAnswer with one JSON object only, following the given schema.\n");
@@ -210,7 +213,7 @@ public class PromptBuilder {
             return "- " + step + "\n";
         }
         return "- " + step + "\n"
-                + "- The learner says they do not understand. Use simpler English than before and fill answer_ru with a short explanation in Russian.\n";
+                + "- The learner says they do not understand. Use simpler English than before and fill answer_ru and follow_up_ru so every sentence of your English, including the question, is translated into Russian.\n";
     }
 
     /** В историю для модели кладём ответ учителя в сжатом виде — экономим контекст (4096 токенов). */

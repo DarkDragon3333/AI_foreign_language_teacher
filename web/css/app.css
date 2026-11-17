@@ -153,6 +153,8 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .composer textarea:focus-visible { outline: none; }
 .composer:focus-within { border-color: var(--accent); }
 .composer-buttons { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.composer-send { display: flex; gap: 8px; }
+#talk[aria-pressed="true"] { background: var(--bad); color: #fff; border-color: var(--bad); }
 
 .fatal { color: var(--bad); text-align: center; margin-top: 40px; }
 
