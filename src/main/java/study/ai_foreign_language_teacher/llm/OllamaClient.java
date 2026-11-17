@@ -17,6 +17,9 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -45,18 +48,44 @@ public class OllamaClient implements LlmClient {
                 .build();
     }
 
+    /** Модели, которые ответили, что не умеют «думать»: им параметр think больше не шлём. */
+    private final Set<String> noThinkParam = ConcurrentHashMap.newKeySet();
+
     @Override
-    public String chat(List<LlmMessage> messages, double temperature, Map<String, Object> format, Consumer<String> onChunk) {
+    public Call chat(String model, List<LlmMessage> messages, double temperature, Map<String, Object> format,
+                     Integer seed, Consumer<String> onChunk) {
+        String name = model == null || model.isBlank() ? cfg.model() : model;
+        acquireSlot();
+        try {
+            try {
+                return send(name, messages, temperature, format, seed, onChunk, cfg.disableThinking() && !noThinkParam.contains(name));
+            } catch (ThinkingUnsupported e) {
+                noThinkParam.add(name);
+                return send(name, messages, temperature, format, seed, onChunk, false);
+            }
+        } finally {
+            slot.release();
+        }
+    }
+
+    private Call send(String model, List<LlmMessage> messages, double temperature, Map<String, Object> format,
+                      Integer seed, Consumer<String> onChunk, boolean sendThinkOff) {
         Map<String, Object> options = new LinkedHashMap<>();
         options.put("temperature", temperature);
         options.put("num_ctx", cfg.numCtx());
         options.put("num_predict", cfg.numPredict());
         options.put("repeat_penalty", 1.15); // маленькие модели склонны зацикливаться
+        if (seed != null) {
+            options.put("seed", seed);
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", cfg.model());
+        body.put("model", model);
         body.put("messages", messages);
         body.put("stream", true);
+        if (sendThinkOff) {
+            body.put("think", false);
+        }
         if (format != null) {
             body.put("format", format);
         }
@@ -69,16 +98,21 @@ public class OllamaClient implements LlmClient {
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
                 .build();
 
-        acquireSlot();
         long started = System.nanoTime();
         try {
             HttpResponse<Stream<String>> response = http.send(request, HttpResponse.BodyHandlers.ofLines());
             try (Stream<String> lines = response.body()) {
                 if (response.statusCode() != 200) {
                     String error = String.join(" ", lines.limit(5).toList());
+                    if (sendThinkOff && error.toLowerCase().contains("think")) {
+                        throw new ThinkingUnsupported();
+                    }
                     throw new LlmException("Ollama returned HTTP " + response.statusCode() + ": " + error);
                 }
                 StringBuilder full = new StringBuilder();
+                long evalTokens = 0;
+                long evalNanos = 0;
+                long loadNanos = 0;
                 Iterator<String> it = lines.iterator();
                 while (it.hasNext()) {
                     String line = it.next();
@@ -97,20 +131,74 @@ public class OllamaClient implements LlmClient {
                         }
                     }
                     if (node.path("done").asBoolean(false)) {
+                        evalTokens = node.path("eval_count").asLong(0);
+                        evalNanos = node.path("eval_duration").asLong(0);
+                        loadNanos = node.path("load_duration").asLong(0);
                         break;
                     }
                 }
-                log.info("LLM turn: {} chars in {} ms", full.length(), (System.nanoTime() - started) / 1_000_000);
-                return full.toString();
+                log.info("LLM turn [{}]: {} chars in {} ms", model, full.length(), (System.nanoTime() - started) / 1_000_000);
+                return new Call(full.toString(), evalTokens, evalNanos, loadNanos);
             }
         } catch (IOException | java.io.UncheckedIOException e) {
             throw new LlmException("Cannot reach Ollama at " + cfg.baseUrl() + " (" + reason(e) + ")", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new LlmException("LLM request interrupted", e);
-        } finally {
-            slot.release();
         }
+    }
+
+    private static final class ThinkingUnsupported extends RuntimeException {
+    }
+
+    @Override
+    public String defaultModel() {
+        return cfg.model();
+    }
+
+    @Override
+    public List<ModelInfo> models() {
+        try {
+            List<ModelInfo> result = new java.util.ArrayList<>();
+            for (JsonNode m : getJson("/api/tags").path("models")) {
+                JsonNode details = m.path("details");
+                result.add(new ModelInfo(m.path("name").asString(""), m.path("size").asLong(0),
+                        details.path("parameter_size").asString(""), details.path("quantization_level").asString("")));
+            }
+            result.sort(java.util.Comparator.comparing(ModelInfo::name));
+            return result;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LlmException("interrupted", e);
+        } catch (Exception e) {
+            throw new LlmException("Cannot reach Ollama at " + cfg.baseUrl() + " (" + reason(e) + ")", e);
+        }
+    }
+
+    @Override
+    public Optional<Running> running(String model) {
+        try {
+            for (JsonNode m : getJson("/api/ps").path("models")) {
+                String name = m.path("name").asString("");
+                if (name.equals(model) || name.equals(model + ":latest")) {
+                    return Optional.of(new Running(m.path("size").asLong(0), m.path("size_vram").asLong(0)));
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.warn("Cannot read Ollama /api/ps: {}", e.toString());
+        }
+        return Optional.empty();
+    }
+
+    private JsonNode getJson(String path) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(cfg.baseUrl() + path)).timeout(Duration.ofSeconds(5)).GET().build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new IOException("HTTP " + response.statusCode());
+        }
+        return mapper.readTree(response.body());
     }
 
     private void acquireSlot() {

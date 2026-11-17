@@ -10,13 +10,14 @@
     try { document.documentElement.dataset.theme = localStorage.getItem('tutor-theme') || 'blue'; }
     catch (e) { document.documentElement.dataset.theme = 'blue'; }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=9">
+  <link rel="stylesheet" href="/css/app.css?v=11">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">Учитель языков <span class="brand-sub">English</span></div>
     <nav class="tabs" aria-label="Разделы">
       <button id="tab-lesson" type="button" class="tab" aria-current="page">Урок</button>
+      <button id="tab-review" type="button" class="tab">Повторение <span id="review-count" class="tab-count" hidden></span></button>
       <button id="tab-journal" type="button" class="tab">Мои ошибки</button>
     </nav>
     <div class="topbar-right">
@@ -97,9 +98,38 @@
       </table>
     </section>
 
+    <!-- Экран: повторение карточек правил по FSRS -->
+    <section id="review" class="card" hidden>
+      <h1>Повторить сегодня</h1>
+      <p id="review-lead" class="note">Правила, на которых вы ошибались. Срок считает алгоритм интервальных повторений: снова сегодня, завтра, через несколько дней или через пару недель.</p>
+      <p id="review-empty" class="muted" hidden>Сегодня повторять нечего. Карточка появится здесь после ошибки в уроке.</p>
+      <p id="review-status" class="status" hidden></p>
+      <article id="review-card" class="review-card" hidden>
+        <div class="review-head">
+          <h2 id="review-title"></h2>
+          <span id="review-cefr" class="chip"></span>
+        </div>
+        <p id="review-left" class="muted"></p>
+        <p id="review-prompt" class="review-prompt"></p>
+        <p id="review-front" class="example bad"></p>
+        <div id="review-back" hidden>
+          <p id="review-rule"></p>
+          <p id="review-ok" class="example ok"></p>
+          <p id="review-trap" class="ru"></p>
+        </div>
+        <div class="review-actions">
+          <button id="review-show" type="button">Показать правило</button>
+          <button id="review-again" type="button" class="rate" hidden>Снова</button>
+          <button id="review-hard" type="button" class="rate" hidden>Трудно</button>
+          <button id="review-good" type="button" class="rate primary" hidden>Хорошо</button>
+          <button id="review-easy" type="button" class="rate" hidden>Легко</button>
+        </div>
+      </article>
+    </section>
+
     <p id="fatal" class="fatal" hidden></p>
   </main>
 
-  <script type="module" src="/js/main.js?v=9"></script>
+  <script type="module" src="/js/main.js?v=11"></script>
 </body>
 </html>

@@ -28,15 +28,15 @@ public enum Cefr {
             case A1, A2 -> """
                     Use very short sentences and only high-frequency words. Speak slowly and simply.
                     Correct almost every mistake, one at a time, gently.
-                    Always fill reply_ru with a short Russian translation or explanation.""";
+                    Always fill answer_ru with a short Russian translation or explanation.""";
             case B1, B2 -> """
                     Keep about 80% of the lesson in English. Correct mistakes that block meaning and mistakes that repeat.
                     Explain a rule in simple English with one example; avoid grammar jargon without an example.
-                    Use reply_ru only when the learner is stuck or writes in Russian.""";
+                    Use answer_ru only when the learner is stuck or writes in Russian.""";
             case C1, C2 -> """
                     Talk like an educated native speaker, not like a schoolteacher.
                     Focus on nuance, register, collocations and idioms; ignore trivial slips unless they repeat.
-                    Leave reply_ru empty unless the learner explicitly asks for Russian.""";
+                    Leave answer_ru empty unless the learner explicitly asks for Russian.""";
         };
     }
 }

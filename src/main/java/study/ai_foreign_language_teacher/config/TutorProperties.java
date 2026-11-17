@@ -6,7 +6,7 @@ import java.time.Duration;
 
 /** Настройки из application.properties с префиксом "tutor". */
 @ConfigurationProperties(prefix = "tutor")
-public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson) {
+public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson, Embed embed) {
 
     public record Ollama(
             String baseUrl,
@@ -15,7 +15,8 @@ public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson l
             int numPredict,
             Duration requestTimeout,
             Duration queueTimeout,
-            String keepAlive) {
+            String keepAlive,
+            boolean disableThinking) {
     }
 
     public record LanguageTool(String baseUrl, String language, boolean enabled, Duration timeout) {
@@ -26,5 +27,9 @@ public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson l
             String nativeLang,
             String targetLang,
             int historyMessages) {
+    }
+
+    /** Маленькая CPU-модель эмбеддингов. Видеопамять не занимает; если сервис молчит, карточки ищутся по правилам LT. */
+    public record Embed(String baseUrl, boolean enabled, Duration timeout, int dimensions) {
     }
 }

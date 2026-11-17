@@ -36,7 +36,9 @@ public record TeacherReply(
     public record Explanation(
             @JsonProperty("simple") String simple,
             @JsonProperty("example_ok") String exampleOk,
-            @JsonProperty("example_bad") String exampleBad) {
+            @JsonProperty("example_bad") String exampleBad,
+            @JsonProperty("title") String title,
+            @JsonProperty("trap") String trap) {
     }
 
     /** Текст, который видит ученик в чате. */

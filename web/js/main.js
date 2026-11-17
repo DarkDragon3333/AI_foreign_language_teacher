@@ -1,5 +1,6 @@
-import { api, chatTurn } from './api.js?v=9';
-import { userMessage, teacherMessage, teacherPlaceholder } from './render.js?v=9';
+import { api, chatTurn } from './api.js?v=11';
+import { userMessage, teacherMessage, teacherPlaceholder } from './render.js?v=11';
+import { openReview, refreshReviewCount } from './review.js?v=11';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const MODE_NAMES = { conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка' };
@@ -63,14 +64,16 @@ function showStart() {
 
 function showTab(tab) {
   state.tab = tab;
-  const lessonTab = tab === 'lesson';
-  $('tab-lesson').toggleAttribute('aria-current', lessonTab);
-  $('tab-journal').toggleAttribute('aria-current', !lessonTab);
-  if (lessonTab) $('tab-lesson').setAttribute('aria-current', 'page'); else $('tab-journal').setAttribute('aria-current', 'page');
-  $('journal').hidden = lessonTab;
-  $('start').hidden = !lessonTab || !!state.session;
-  $('lesson').hidden = !lessonTab || !state.session;
-  if (!lessonTab) loadJournal();
+  for (const name of ['lesson', 'review', 'journal']) {
+    const button = $('tab-' + name);
+    if (name === tab) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+  }
+  $('journal').hidden = tab !== 'journal';
+  $('review').hidden = tab !== 'review';
+  $('start').hidden = tab !== 'lesson' || !!state.session;
+  $('lesson').hidden = tab !== 'lesson' || !state.session;
+  if (tab === 'journal') loadJournal();
+  if (tab === 'review') openReview();
 }
 
 async function loadJournal() {
@@ -113,6 +116,7 @@ async function loadJournal() {
 }
 
 $('tab-lesson').addEventListener('click', () => showTab('lesson'));
+$('tab-review').addEventListener('click', () => showTab('review'));
 $('tab-journal').addEventListener('click', () => showTab('journal'));
 
 $('start-form').addEventListener('submit', async (event) => {
@@ -216,6 +220,7 @@ async function turn(text, hint) {
   } else {
     setStatus('');
     if ($('health').classList.contains('down')) refreshHealth();
+    refreshReviewCount();
   }
   setBusy(false);
   fitInput();
@@ -310,6 +315,7 @@ async function boot() {
     showStart();
     fatal('Не удалось связаться с сервером: ' + e.message);
   }
+  refreshReviewCount();
 }
 
 boot();

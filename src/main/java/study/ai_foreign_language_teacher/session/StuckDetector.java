@@ -2,14 +2,18 @@ package study.ai_foreign_language_teacher.session;
 
 import java.util.List;
 
-/** Грубое правило: ученик пишет, что не понимает / просит помощи. */
+/** Грубое правило: ученик пишет, что не понимает, или просит помощи. */
 public final class StuckDetector {
 
-    private static final List<String> MARKERS = List.of(
-            "не понимаю", "не понял", "не поняла", "непонятно", "не знаю", "помоги", "подскажи", "подсказк",
+    /** Говорят о затруднении в любом месте реплики. */
+    private static final List<String> ANYWHERE = List.of(
+            "не понимаю", "не понял", "не поняла", "непонятно", "помоги", "подскажи", "подсказк",
             "что это значит", "как сказать", "объясни",
             "i don't understand", "i dont understand", "i do not understand", "don't get it",
-            "i don't know", "i dont know", "help me", "give me a hint", "what does it mean");
+            "help me", "give me a hint", "what does it mean");
+
+    /** «Не знаю» — затруднение, только если это вся реплика: «I don't know what I want to do» — обычный ответ. */
+    private static final List<String> WHOLE_MESSAGE = List.of("не знаю", "i don't know", "i dont know", "i do not know", "no idea");
 
     private StuckDetector() {
     }
@@ -18,7 +22,11 @@ public final class StuckDetector {
         if (text == null || text.isBlank()) {
             return false;
         }
-        String t = text.toLowerCase().replace('’', '\'');
-        return MARKERS.stream().anyMatch(t::contains);
+        String t = text.toLowerCase().replace('\u2019', '\'').strip();
+        if (ANYWHERE.stream().anyMatch(t::contains)) {
+            return true;
+        }
+        String bare = t.replaceAll("[\\p{Punct}\\s]+$", "").replaceAll("^(sorry|извини|извините)[,\\s]+", "");
+        return WHOLE_MESSAGE.contains(bare);
     }
 }

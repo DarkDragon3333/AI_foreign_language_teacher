@@ -147,7 +147,7 @@ public final class CorrectionPolicy {
         return a.contains(b) || b.contains(a);
     }
 
-    static boolean sameText(String a, String b) {
+    public static boolean sameText(String a, String b) {
         return a != null && b != null && normalize(a).equals(normalize(b));
     }
 

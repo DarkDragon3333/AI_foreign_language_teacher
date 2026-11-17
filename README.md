@@ -2,6 +2,8 @@
 
 Архитектура и план — в `../ARCHITECTURE.md`. Здесь — как запустить и что уже готово.
 
+Итог сравнения локальных моделей, после которого выбрана gemma4 e4b, — в [RESULTS.md](RESULTS.md).
+
 ## Состояние по плану (раздел 15 архитектуры)
 
 | Шаг | Что | Статус |
@@ -9,7 +11,7 @@
 | 1 | Compose: postgres, ollama, nginx, health | готово |
 | 2 | Текстовый чат: LLM + CEFR-промпт + JSON-контракт + экран чата | готово |
 | 3 | LanguageTool + журнал ошибок + экран «Мои ошибки» | готово |
-| 4 | Карточки правил + pgvector + FSRS | — |
+| 4 | Карточки правил + pgvector + FSRS | готово |
 | 5 | STT (нажми и скажи) | — |
 | 6 | TTS, озвучка ответа | — |
 | 7 | Дуплексный голос: WebSocket + VAD + barge-in | — |
@@ -22,18 +24,18 @@ cp .env.example .env        # если .env ещё нет; задайте пар
 docker compose up -d --build
 ```
 
-Первый запуск долгий: собирается jar и контейнер `ollama-pull` скачивает модель (~2.5 ГБ).
+Первый запуск долгий: собирается jar и контейнер `ollama-pull` скачивает модель (файл весов около 6 ГБ).
 Следить за загрузкой: `docker compose logs -f ollama-pull`.
 
 Когда `http://localhost/api/health` отвечает `"status":"up"` — открывайте `http://localhost`.
 
-Нужна видеокарта NVIDIA и NVIDIA Container Toolkit (на Windows — через WSL2). Без GPU уберите блок
+Нужна видеокарта NVIDIA от 6 ГБ и NVIDIA Container Toolkit (на Windows — через WSL2). Без GPU уберите блок
 `deploy:` у сервиса `ollama` в `docker-compose.yaml` — модель пойдёт на CPU, медленно.
 
 ## Запуск без Docker (разработка)
 
 Профиль `memory` хранит данные в памяти, Postgres не нужен. Ollama должна быть запущена локально
-(`ollama pull qwen3:4b-instruct-2507-q4_K_M`).
+(`ollama pull gemma4:e4b-it-qat`).
 
 ```bash
 ./gradlew bootRun --args='--spring.profiles.active=memory'
@@ -46,6 +48,8 @@ docker compose up -d --build
 |---|---|---|
 | GET | `/api/health` | состояние Ollama, хранилища и LanguageTool; 503, если что-то не отвечает |
 | GET | `/api/errors` | журнал ошибок: правило, пример, сколько раз |
+| GET | `/api/review` | карточки правил, которые пора повторить сегодня |
+| POST | `/api/review/{slug}` | оценка повторения `{rating: 1..4}` — снова, трудно, хорошо, легко |
 | GET / PUT | `/api/profile` | профиль: имя, уровень CEFR |
 | POST | `/api/sessions` | начать урок `{cefr?, topic?, mode?}` |
 | GET | `/api/sessions`, `/api/sessions/{id}` | последние уроки / один урок |
@@ -66,12 +70,20 @@ docker compose up -d --build
 Логика — в `session/CorrectionPolicy.java`, тесты — в `CorrectionPolicyTest`.
 Если LanguageTool недоступен, урок продолжается без него, а `/api/health` показывает `down`.
 
+## Карточки правил и повторение
+
+Короткие заметки лежат в `src/main/resources/rules/`. Это свои формулировки: правило, верный пример, неверный и типичная ошибка русскоязычных. Когда LanguageTool находит ошибку или ученик спрашивает про правило, в запрос модели кладётся одна-две карточки, а ученик видит текст карточки, а не выдуманное правило.
+
+Поиск по словам и по id LanguageTool работает всегда. Поиск по смыслу — сервис `embed` (paraphrase-multilingual-MiniLM-L12-v2, только процессор). Он нужен, чтобы фраза вроде «когда писать have been» нашла карточку с другим названием. Если сервис ещё не поднялся, урок идёт без него.
+
+Ошибка, к которой нашлась карточка, ставится в очередь FSRS. Вкладка «Повторение» показывает, сколько карточек пора повторить сегодня. Оценки: снова, трудно, хорошо, легко.
+
 ## Как устроен код
 
 ```
 src/main/java/study/ai_foreign_language_teacher/
   api/      REST-контроллеры и DTO
-  session/  LessonService — педагогический контур одного хода
+  session/  TurnEngine — педагогический контур одного хода; LessonService — урок и сохранение
   nlp/      клиент LanguageTool (проверка грамматики до LLM)
   llm/      клиент Ollama (1 запрос за раз), промпт, JSON-схема, разбор ответа
   memory/   хранилище: jdbc/ (Postgres) и inmemory/ (профиль memory)

@@ -42,7 +42,7 @@ public final class ReplyPolish {
     }
 
     /** Похожесть по набору слов: «I like the end work day» ~ «I like the end of work.» */
-    static boolean similar(String a, String b) {
+    public static boolean similar(String a, String b) {
         if (a == null || b == null) {
             return false;
         }

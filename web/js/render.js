@@ -120,12 +120,13 @@ function fillTeacher(wrap, bubble, reply, fallbackText) {
   }
 
   const x = reply.explanation;
-  if (x) {
+  if (x && (x.simple || x.example_ok || x.example_bad)) {
     const box = el('div', 'extra');
-    box.append(el('div', 'extra-title', 'Правило'));
+    box.append(el('div', 'extra-title', x.title ? 'Правило · ' + x.title : 'Правило'));
     if (x.simple) box.append(el('div', null, x.simple));
     if (x.example_ok) box.append(el('div', 'example ok', '✓ ' + x.example_ok));
     if (x.example_bad) box.append(el('div', 'example bad', '✗ ' + x.example_bad));
+    if (x.trap) box.append(el('div', 'ru', x.trap));
     wrap.append(box);
   }
 

@@ -61,8 +61,8 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     }
 
     @Override
-    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr) {
-        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(), null);
+    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model) {
+        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(), null, model);
         sessions.put(s.id(), s);
         return s;
     }
@@ -84,19 +84,19 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     @Override
     public void updateSupportLevel(long id, int supportLevel) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                supportLevel, s.startedAt(), s.endedAt()));
+                supportLevel, s.startedAt(), s.endedAt(), s.model()));
     }
 
     @Override
     public void updateCefr(long id, Cefr cefr) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), cefr,
-                s.supportLevel(), s.startedAt(), s.endedAt()));
+                s.supportLevel(), s.startedAt(), s.endedAt(), s.model()));
     }
 
     @Override
     public void end(long id) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                s.supportLevel(), s.startedAt(), Instant.now()));
+                s.supportLevel(), s.startedAt(), Instant.now(), s.model()));
     }
 
     @Override

@@ -23,6 +23,8 @@ export const api = {
   messages: (sessionId) => request('GET', `/api/sessions/${sessionId}/messages`),
   setLevel: (sessionId, cefr) => request('PUT', `/api/sessions/${sessionId}/level`, { cefr }),
   errors: () => request('GET', '/api/errors'),
+  review: () => request('GET', '/api/review'),
+  rateReview: (slug, rating) => request('POST', `/api/review/${encodeURIComponent(slug)}`, { rating }),
   endSession: (sessionId) => request('POST', `/api/sessions/${sessionId}/end`),
 };
 

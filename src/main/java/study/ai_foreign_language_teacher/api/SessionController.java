@@ -37,8 +37,8 @@ public class SessionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SessionView start(@RequestBody(required = false) StartSessionRequest request) {
-        StartSessionRequest r = request == null ? new StartSessionRequest(null, null, null) : request;
-        return SessionView.of(lessons.startSession(r.cefr(), r.topic(), r.mode()));
+        StartSessionRequest r = request == null ? new StartSessionRequest(null, null, null, null) : request;
+        return SessionView.of(lessons.startSession(r.cefr(), r.topic(), r.mode(), r.model()));
     }
 
     @GetMapping

@@ -49,7 +49,8 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
             Cefr.parseOr(rs.getString("cefr_snapshot"), Cefr.B1),
             rs.getInt("support_level"),
             instant(rs, "started_at"),
-            instant(rs, "ended_at"));
+            instant(rs, "ended_at"),
+            rs.getString("model"));
 
     private static final RowMapper<ChatMessage> MESSAGE = (rs, i) -> new ChatMessage(
             rs.getLong("id"),
@@ -122,11 +123,12 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
     // ---- сессии ----
 
     @Override
-    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr) {
+    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model) {
         return jdbc.sql("""
-                        INSERT INTO sessions (user_id, mode, topic, cefr_snapshot)
-                        VALUES (:userId, :mode, :topic, :cefr)
+                        INSERT INTO sessions (user_id, mode, topic, cefr_snapshot, model)
+                        VALUES (:userId, :mode, :topic, :cefr, :model)
                         RETURNING *""")
+                .param("model", model, java.sql.Types.VARCHAR)
                 .param("userId", userId)
                 .param("mode", mode.name())
                 .param("topic", topic)

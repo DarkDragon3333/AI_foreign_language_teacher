@@ -20,4 +20,14 @@ class StuckDetectorTest {
         assertFalse(StuckDetector.isStuck(""));
         assertFalse(StuckDetector.isStuck(null));
     }
+
+    @Test
+    void dontKnowIsStuckOnlyAsTheWholeMessage() {
+        // реальный случай: обычный ответ был принят за просьбу о помощи
+        assertFalse(StuckDetector.isStuck("I don't know what I want to do"));
+        assertFalse(StuckDetector.isStuck("Я не знаю, кем хочу быть"));
+        assertTrue(StuckDetector.isStuck("I don't know."));
+        assertTrue(StuckDetector.isStuck("не знаю"));
+        assertTrue(StuckDetector.isStuck("Sorry, I don't know"));
+    }
 }

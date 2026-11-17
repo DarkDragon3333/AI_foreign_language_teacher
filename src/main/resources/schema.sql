@@ -61,3 +61,43 @@ CREATE TABLE IF NOT EXISTS error_events (
     severity    TEXT        NOT NULL DEFAULT 'normal',
     UNIQUE (user_id, rule_id)
 );
+
+-- урок может идти на модели, заданной при старте; пусто — модель по умолчанию
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model TEXT;
+
+-- ---- Шаг 4: карточки правил, поиск по смыслу, FSRS ----
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- учебник: короткие проверенные заметки. Эмбеддинг считает CPU-модель paraphrase-multilingual-MiniLM-L12-v2 (384 числа).
+CREATE TABLE IF NOT EXISTS rule_cards (
+    slug         TEXT PRIMARY KEY,
+    cefr_min     TEXT             NOT NULL,
+    cefr_max     TEXT             NOT NULL,
+    title        TEXT             NOT NULL,
+    title_ru     TEXT             NOT NULL,
+    rule_text    TEXT             NOT NULL,
+    rule_ru      TEXT             NOT NULL,
+    example_ok   TEXT             NOT NULL,
+    example_bad  TEXT             NOT NULL,
+    l1_trap      TEXT             NOT NULL,
+    lt_rules     JSONB            NOT NULL DEFAULT '[]',
+    keywords     JSONB            NOT NULL DEFAULT '[]',
+    content_hash TEXT             NOT NULL,
+    embedding    vector(384)
+);
+
+-- одна строка на ученика и карточку: когда показать правило снова
+CREATE TABLE IF NOT EXISTS fsrs_cards (
+    user_id     BIGINT           NOT NULL REFERENCES users (id),
+    slug        TEXT             NOT NULL,
+    state       TEXT             NOT NULL,
+    due         TIMESTAMPTZ      NOT NULL,
+    stability   DOUBLE PRECISION NOT NULL DEFAULT 0,
+    difficulty  DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reps        INT              NOT NULL DEFAULT 0,
+    lapses      INT              NOT NULL DEFAULT 0,
+    last_review TIMESTAMPTZ,
+    PRIMARY KEY (user_id, slug)
+);
+CREATE INDEX IF NOT EXISTS idx_fsrs_due ON fsrs_cards (user_id, due);

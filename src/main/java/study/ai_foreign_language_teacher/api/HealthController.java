@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import study.ai_foreign_language_teacher.llm.LlmClient;
 import study.ai_foreign_language_teacher.memory.StorageHealth;
+import study.ai_foreign_language_teacher.memory.rules.EmbeddingClient;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 
 import java.util.LinkedHashMap;
@@ -20,11 +21,13 @@ public class HealthController {
     private final LlmClient llm;
     private final StorageHealth storage;
     private final GrammarChecker checker;
+    private final EmbeddingClient embeddings;
 
-    public HealthController(LlmClient llm, StorageHealth storage, GrammarChecker checker) {
+    public HealthController(LlmClient llm, StorageHealth storage, GrammarChecker checker, EmbeddingClient embeddings) {
         this.llm = llm;
         this.storage = storage;
         this.checker = checker;
+        this.embeddings = embeddings;
     }
 
     @GetMapping("/health")
@@ -37,6 +40,9 @@ public class HealthController {
         components.put("ollama", component(ollama.up(), ollama.detail()));
         components.put("storage", component(storageUp, storage.kind()));
         components.put("languagetool", component(lt.up(), lt.detail()));
+        // поиск карточек по смыслу не обязателен: без него урок жив, карточки находятся по id LanguageTool
+        boolean embedUp = !embeddings.enabled() || embeddings.ready();
+        components.put("embed", component(embedUp, embeddings.statusDetail()));
         // stt, tts добавятся на шагах 5, 6
 
         boolean up = ollama.up() && storageUp && lt.up();

@@ -5,6 +5,7 @@ import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.RuleCard;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
@@ -49,9 +50,16 @@ public class PromptBuilder {
     /** @param alreadyAsked вопросы учителя, которые нельзя задавать снова */
     public List<LlmMessage> build(UserProfile profile, LessonSession session, List<ChatMessage> history, boolean stuck,
                                   List<LtMatch> checker, List<ErrorEvent> weak, List<String> alreadyAsked) {
+        return build(profile, session, history, stuck, checker, weak, alreadyAsked, List.of());
+    }
+
+    /** @param cards одна-две проверенные заметки; модель объясняет по ним и не выдумывает правило */
+    public List<LlmMessage> build(UserProfile profile, LessonSession session, List<ChatMessage> history, boolean stuck,
+                                  List<LtMatch> checker, List<ErrorEvent> weak, List<String> alreadyAsked,
+                                  List<RuleCard> cards) {
         List<LlmMessage> messages = new ArrayList<>();
         messages.add(LlmMessage.system(systemPrompt(profile, session, stuck) + checkerReport(checker) + weakPoints(weak)
-                + alreadyAsked(alreadyAsked)));
+                + alreadyAsked(alreadyAsked) + ruleCards(cards)));
         for (ChatMessage m : history) {
             messages.add(m.role() == Role.USER
                     ? LlmMessage.user(m.text())
@@ -79,14 +87,14 @@ public class PromptBuilder {
 
                 ALWAYS
                 - Write correct, natural English. Never repeat the learner's mistake in your own words.
-                - reply_en is YOUR OWN short reaction to what the learner said (1-2 sentences): answer their question, comment on it, or encourage them. It is not a corrected copy of the learner's message: never repeat or rephrase the learner's sentence in reply_en.
-                - next_prompt is exactly one NEW question or task that moves the lesson forward. Never write the same sentence in reply_en and next_prompt, and never ask a question you have already asked.
-                - If the learner asks you something, answer it in reply_en first.
-                - If the learner's last message has a real mistake, fill "correction": original = the learner's whole message, corrected = the whole message with only the mistakes fixed, errors = the mistakes (span = the wrong words copied exactly from the learner's message, rule = short rule name, hint = one short tip). Never shorten, split or rephrase a correct sentence: style is not a mistake. If there is nothing to fix, set corrected equal to original and leave errors empty.
-                - Fill "explanation" only when you explain a rule or the learner asks why: simple = the rule in one or two short sentences, example_ok = one correct example, example_bad = one typical wrong example. Otherwise leave its fields empty.
+                - answer_en is YOUR OWN short reaction to what the learner said (1-2 sentences): answer their question, comment on it, or encourage them. It is not a corrected copy of the learner's message: never repeat or rephrase the learner's sentence in answer_en.
+                - answer_ru is Russian text. Leave it empty unless the level rules or the support rules ask for it.
+                - If the learner asks you something, answer it in answer_en first.
+                - If the learner's last message has a real mistake, fill "correction". First "errors": one item per mistake (fragment = the wrong words copied exactly from the learner's message, rule = short rule name, tip = one short tip). Then "fixed_text": the learner's whole message with only those mistakes fixed. Never shorten, split or rephrase a correct sentence: style is not a mistake. If there is nothing to fix, leave errors empty and fixed_text empty.
+                - Fill "explanation" only when you explain a rule or the learner asks why: brief_rule = the rule in one or two short sentences, example_correct = one correct example, example_wrong = one typical wrong example. Otherwise leave its fields empty.
                 - Only correct what you are sure about. Do not invent grammar rules.
-                - reply_ru is Russian text. Leave it empty unless the level rules or the support rules ask for it.
-                - Leave cards_to_review empty.
+                - follow_up_question is exactly one NEW question or task that moves the lesson forward. Never write the same sentence in answer_en and follow_up_question, and never ask a question you have already asked.
+                - Plain text only: no markdown, no asterisks.
                 """.formatted(session.cefr(), session.cefr(), session.cefr().teachingGuidance(),
                 session.mode().json(), session.mode().instruction(), topic));
 
@@ -94,8 +102,8 @@ public class PromptBuilder {
 
                 EXAMPLE
                 Learner: "I like play football with my friends."
-                Good: reply_en = "That sounds fun! Football is a great way to see friends.", next_prompt = "How often do you play?"
-                Bad: reply_en = "I like to play football with my friends." (it only repeats the learner)
+                Good: answer_en = "That sounds fun! Football is a great way to see friends.", follow_up_question = "How often do you play?"
+                Bad: answer_en = "I like to play football with my friends." (it only repeats the learner)
                 """);
         sb.append("\nSUPPORT\n").append(supportRule(session.supportLevel(), stuck));
         sb.append("\nAnswer with one JSON object only, following the given schema.\n");
@@ -112,7 +120,7 @@ public class PromptBuilder {
 
                     GRAMMAR CHECKER
                     An automatic checker found no mistakes in the learner's last message. Assume it is correct.
-                    Add a correction only for a clear grammar or word-choice mistake that you can quote exactly in errors.span.
+                    Add a correction only for a clear grammar or word-choice mistake that you can quote exactly in errors.fragment.
                     """;
         }
         StringBuilder sb = new StringBuilder("""
@@ -133,7 +141,7 @@ public class PromptBuilder {
         }
         List<LtMatch> typos = checker.stream().filter(LtMatch::spelling).toList();
         if (!typos.isEmpty()) {
-            sb.append("Possible typos. Fix a word in \"corrected\" only if it is really misspelled. "
+            sb.append("Possible typos. Fix a word in \"fixed_text\" only if it is really misspelled. "
                     + "Names of people, places, brands and products are NOT typos: keep them exactly as the learner wrote them.\n");
             for (LtMatch m : typos) {
                 sb.append("- \"").append(m.span()).append("\" (maybe \"").append(String.join("\" or \"", m.replacements())).append("\")\n");
@@ -168,6 +176,28 @@ public class PromptBuilder {
         return sb.toString();
     }
 
+    /** Заметки, написанные заранее. Модель не имеет права подменить их своим правилом. */
+    static String ruleCards(List<RuleCard> cards) {
+        if (cards == null || cards.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("""
+
+                RULE CARDS
+                These notes were written and checked in advance. If you explain a mistake or the learner asked about a rule,
+                follow the matching note and do not invent a different rule. Copy the idea of its rule and its two examples.
+                If none of the notes fit, leave the explanation fields empty.
+                """);
+        for (RuleCard card : cards) {
+            sb.append("- ").append(card.title()).append(" (").append(card.slug()).append(")\n");
+            sb.append("  Rule: ").append(card.rule()).append('\n');
+            sb.append("  Correct: ").append(card.exampleOk()).append('\n');
+            sb.append("  Wrong: ").append(card.exampleBad()).append('\n');
+            sb.append("  Russian speakers often: ").append(card.l1Trap()).append('\n');
+        }
+        return sb.toString();
+    }
+
     /** Ступенчатые подсказки: 0 намёк → 1 правило → 2 пример → 3 правильный ответ. */
     static String supportRule(int level, boolean stuck) {
         String step = switch (level) {
@@ -180,7 +210,7 @@ public class PromptBuilder {
             return "- " + step + "\n";
         }
         return "- " + step + "\n"
-                + "- The learner says they do not understand. Use simpler English than before and fill reply_ru with a short explanation in Russian.\n";
+                + "- The learner says they do not understand. Use simpler English than before and fill answer_ru with a short explanation in Russian.\n";
     }
 
     /** В историю для модели кладём ответ учителя в сжатом виде — экономим контекст (4096 токенов). */
@@ -189,16 +219,16 @@ public class PromptBuilder {
         if (m.payloadJson() != null) {
             try {
                 TeacherReply reply = mapper.readValue(m.payloadJson(), TeacherReply.class);
-                compact.put("reply_en", reply.replyEn());
+                compact.put("answer_en", reply.replyEn());
                 if (reply.nextPrompt() != null) {
-                    compact.put("next_prompt", reply.nextPrompt());
+                    compact.put("follow_up_question", reply.nextPrompt());
                 }
                 return mapper.writeValueAsString(compact);
             } catch (JacksonException ignored) {
                 // повреждённый payload — используем видимый текст
             }
         }
-        compact.put("reply_en", m.text());
+        compact.put("answer_en", m.text());
         return mapper.writeValueAsString(compact);
     }
 }

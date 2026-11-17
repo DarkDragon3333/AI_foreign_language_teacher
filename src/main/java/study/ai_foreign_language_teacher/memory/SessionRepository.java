@@ -9,7 +9,8 @@ import java.util.Optional;
 
 public interface SessionRepository {
 
-    LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr);
+    /** @param model модель для этого урока; null — модель по умолчанию */
+    LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model);
 
     Optional<LessonSession> find(long id);
 

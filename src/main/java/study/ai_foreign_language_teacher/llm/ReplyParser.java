@@ -63,6 +63,12 @@ public class ReplyParser {
                 supportLevel);
     }
 
+    /** Модель выдала JSON по контракту (а не обрывок или посторонний текст). */
+    public boolean isContract(String raw) {
+        TeacherReply parsed = tryParse(raw);
+        return parsed != null && (!blank(parsed.replyEn()) || !blank(parsed.nextPrompt()));
+    }
+
     /** Маленькие модели любят повторить вопрос и в reply_en, и в next_prompt — второй раз не показываем. */
     static String dedupeQuestion(String replyEn, String nextPrompt) {
         if (nextPrompt == null) {
@@ -85,10 +91,31 @@ public class ReplyParser {
             return null;
         }
         try {
-            return mapper.readValue(json.substring(start, end + 1), TeacherReply.class);
+            return fromWire(mapper.readValue(json.substring(start, end + 1), LlmReply.class));
         } catch (JacksonException e) {
             return null;
         }
+    }
+
+    /** Формат модели → контракт интерфейса. Разметку **жирным** и *курсивом* убираем: интерфейс её не показывает. */
+    private static TeacherReply fromWire(LlmReply w) {
+        TeacherReply.Correction correction = null;
+        if (w.correction() != null) {
+            List<TeacherReply.ErrorItem> errors = w.correction().errors() == null ? null : w.correction().errors().stream()
+                    .filter(Objects::nonNull)
+                    .map(e -> new TeacherReply.ErrorItem(plain(e.fragment()), plain(e.rule()), plain(e.tip())))
+                    .toList();
+            correction = new TeacherReply.Correction(plain(w.correction().original()), plain(w.correction().fixedText()), errors);
+        }
+        TeacherReply.Explanation explanation = w.explanation() == null ? null : new TeacherReply.Explanation(
+                plain(w.explanation().briefRule()), plain(w.explanation().exampleCorrect()), plain(w.explanation().exampleWrong()),
+                null, null);
+        return new TeacherReply(plain(w.answerEn()), plain(w.answerRu()), correction, explanation,
+                plain(w.followUpQuestion()), List.of(), null, null, null);
+    }
+
+    private static String plain(String s) {
+        return s == null ? null : s.replace("**", "").replaceAll("(?<![\\p{L}\\p{N}])\\*(?=\\S)|(?<=\\S)\\*(?![\\p{L}\\p{N}])", "");
     }
 
     private static TeacherReply.Correction normalize(TeacherReply.Correction c) {
@@ -102,6 +129,7 @@ public class ReplyParser {
                 .map(e -> new TeacherReply.ErrorItem(clean(e.span()), clean(e.rule()), clean(e.hint())))
                 .filter(e -> e.span() != null || e.rule() != null || e.hint() != null)
                 .toList();
+        // в новом формате модель не повторяет исходную фразу: сравнивать её с текстом ученика будет CorrectionPolicy
         boolean nothingChanged = corrected == null || corrected.equals(original);
         if (nothingChanged && errors.isEmpty()) {
             return null; // ошибок нет — блок исправления не показываем
@@ -116,10 +144,12 @@ public class ReplyParser {
         String simple = clean(e.simple());
         String ok = clean(e.exampleOk());
         String bad = clean(e.exampleBad());
-        if (simple == null && ok == null && bad == null) {
+        String title = clean(e.title());
+        String trap = clean(e.trap());
+        if (simple == null && ok == null && bad == null && title == null && trap == null) {
             return null;
         }
-        return new TeacherReply.Explanation(simple, ok, bad);
+        return new TeacherReply.Explanation(simple, ok, bad, title, trap);
     }
 
     private static boolean looksLikePlainText(String raw) {

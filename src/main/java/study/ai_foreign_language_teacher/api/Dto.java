@@ -4,6 +4,7 @@ import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.RuleCard;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 
@@ -16,7 +17,7 @@ public final class Dto {
     private Dto() {
     }
 
-    public record StartSessionRequest(String cefr, String topic, String mode) {
+    public record StartSessionRequest(String cefr, String topic, String mode, String model) {
     }
 
     public record ChatRequest(Long sessionId, String text, Boolean hint) {
@@ -29,10 +30,10 @@ public final class Dto {
     }
 
     public record SessionView(long id, String mode, String topic, String cefr, int supportLevel,
-                              Instant startedAt, Instant endedAt) {
+                              Instant startedAt, Instant endedAt, String model) {
         static SessionView of(LessonSession s) {
             return new SessionView(s.id(), s.mode().json(), s.topic(), s.cefr().name(), s.supportLevel(),
-                    s.startedAt(), s.endedAt());
+                    s.startedAt(), s.endedAt(), s.model());
         }
     }
 
@@ -60,6 +61,24 @@ public final class Dto {
         static JournalEntry of(ErrorEvent e) {
             return new JournalEntry(e.ruleId(), e.source(), e.category(), e.title(), e.sampleSpan(), e.count(), e.lastSeen());
         }
+    }
+
+    public record ReviewCard(String slug, String title, String titleRu, String cefr, String rule, String ruleRu,
+                             String exampleOk, String exampleBad, String trap) {
+        static ReviewCard of(RuleCard card) {
+            String cefr = card.cefrMin().equals(card.cefrMax()) ? card.cefrMin() : card.cefrMin() + "–" + card.cefrMax();
+            return new ReviewCard(card.slug(), card.title(), card.titleRu(), cefr, card.rule(), card.ruleRu(),
+                    card.exampleOk(), card.exampleBad(), card.l1Trap());
+        }
+    }
+
+    public record ReviewQueue(int due, java.util.List<ReviewCard> cards) {
+    }
+
+    public record RateRequest(int rating) {
+    }
+
+    public record RateResult(String slug, Instant due, long intervalDays, int remaining) {
     }
 
     public record ErrorView(String error) {

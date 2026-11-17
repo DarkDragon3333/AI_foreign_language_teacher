@@ -5,10 +5,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * JSON-схема контракта (раздел 6). Передаётся в Ollama как "format" — модель физически
+ * JSON-схема ответа модели (см. LlmReply). Передаётся в Ollama как "format" — модель физически
  * не может выдать текст вне схемы. Все поля обязательны (маленьким моделям так проще);
  * пустые значения потом убирает ReplyParser.
- * reply_en стоит первым, чтобы его можно было стримить ученику, пока остальное генерируется.
+ *
+ * Поля объявлены в алфавитном порядке, и это же порядок генерации: answer_en идёт первым,
+ * поэтому ученик видит ответ сразу, пока модель дописывает исправление. Уровень, режим и ступень
+ * подсказки в схему не входят — их всё равно задаёт приложение, а модель тратила на них токены.
  */
 public final class ReplySchema {
 
@@ -17,30 +20,25 @@ public final class ReplySchema {
 
     public static Map<String, Object> schema() {
         Map<String, Object> errorItem = object(props(
-                "span", string(),
+                "fragment", string(),
                 "rule", string(),
-                "hint", string()));
+                "tip", string()));
 
         Map<String, Object> correction = object(props(
-                "original", string(),
-                "corrected", string(),
-                "errors", Map.of("type", "array", "items", errorItem)));
+                "errors", Map.of("type", "array", "items", errorItem),
+                "fixed_text", string()));
 
         Map<String, Object> explanation = object(props(
-                "simple", string(),
-                "example_ok", string(),
-                "example_bad", string()));
+                "brief_rule", string(),
+                "example_correct", string(),
+                "example_wrong", string()));
 
         return object(props(
-                "reply_en", string(),
-                "reply_ru", string(),
+                "answer_en", string(),
+                "answer_ru", string(),
                 "correction", correction,
                 "explanation", explanation,
-                "next_prompt", string(),
-                "cards_to_review", Map.of("type", "array", "items", string()),
-                "mode", Map.of("type", "string", "enum", List.of("conversation", "explain", "correct", "drill")),
-                "cefr", Map.of("type", "string", "enum", List.of("A1", "A2", "B1", "B2", "C1", "C2")),
-                "support_level", Map.of("type", "integer", "minimum", 0, "maximum", 3)));
+                "follow_up_question", string()));
     }
 
     private static Map<String, Object> string() {

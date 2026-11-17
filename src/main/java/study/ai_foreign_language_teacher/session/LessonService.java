@@ -21,6 +21,7 @@ import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.MessageRepository;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
 import study.ai_foreign_language_teacher.memory.SessionRepository;
+import study.ai_foreign_language_teacher.memory.rules.ReviewService;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
 import tools.jackson.databind.ObjectMapper;
@@ -31,7 +32,7 @@ import java.util.function.Consumer;
 
 /**
  * Педагогический контур (раздел 7): реплика ученика → контекст → LLM → валидация → запись → ответ.
- * Карточки правил и FSRS встанут в этот же метод на шаге 4.
+ * Карточка правила подкладывается в запрос внутри TurnEngine. Ошибка по ней ставит карточку в очередь FSRS.
  */
 @Service
 public class LessonService {
@@ -42,36 +43,38 @@ public class LessonService {
     private final SessionRepository sessions;
     private final MessageRepository messages;
     private final ErrorRepository errors;
-    private final GrammarChecker checker;
+    private final TurnEngine engine;
+    private final ReviewService reviews;
     private final LlmClient llm;
-    private final PromptBuilder prompts;
-    private final ReplyParser parser;
     private final ObjectMapper mapper;
     private final TutorProperties props;
 
     public LessonService(ProfileRepository profiles, SessionRepository sessions, MessageRepository messages,
-                         ErrorRepository errors, GrammarChecker checker, LlmClient llm, PromptBuilder prompts, ReplyParser parser, ObjectMapper mapper,
-                         TutorProperties props) {
+                         ErrorRepository errors, TurnEngine engine, ReviewService reviews, LlmClient llm,
+                         ObjectMapper mapper, TutorProperties props) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.messages = messages;
         this.errors = errors;
-        this.checker = checker;
+        this.engine = engine;
+        this.reviews = reviews;
         this.llm = llm;
-        this.prompts = prompts;
-        this.parser = parser;
         this.mapper = mapper;
         this.props = props;
     }
 
-    public LessonSession startSession(String cefr, String topic, String mode) {
+    public LessonSession startSession(String cefr, String topic, String mode, String model) {
         UserProfile profile = profiles.getOrCreateDefault();
         Cefr level = cefr == null || cefr.isBlank() ? profile.cefr() : Cefr.parse(cefr);
         String cleanTopic = topic == null || topic.isBlank() ? null : topic.strip();
         if (cleanTopic != null && cleanTopic.length() > 200) {
             throw new IllegalArgumentException("Topic is too long (max 200 characters)");
         }
-        return sessions.create(profile.id(), LessonMode.parse(mode), cleanTopic, level);
+        String cleanModel = model == null || model.isBlank() ? null : model.strip();
+        if (cleanModel != null && llm.models().stream().noneMatch(m -> m.name().equals(cleanModel))) {
+            throw new IllegalArgumentException("Model " + cleanModel + " is not installed in Ollama");
+        }
+        return sessions.create(profile.id(), LessonMode.parse(mode), cleanTopic, level, cleanModel);
     }
 
     public LessonSession getSession(long id) {
@@ -132,53 +135,18 @@ public class LessonService {
         }
 
         UserProfile profile = profiles.getOrCreateDefault();
-
-        // LanguageTool первый: детерминированные ошибки находим до LLM и передаём ей как факты
-        boolean checkable = !userText.isEmpty() && !stuck;
-        List<LtMatch> found = checkable ? checker.check(userText) : List.of();
-
         List<ChatMessage> history = messages.lastN(sessionId, props.lesson().historyMessages());
-        List<ErrorEvent> weak = errors.top(profile.id(), 3);
-        // что учитель уже говорил: чтобы не спрашивал одно и то же по кругу
-        List<String> teacherTexts = history.stream().filter(m -> m.role() == Role.ASSISTANT).map(ChatMessage::text).toList();
-        List<String> recent = teacherTexts.subList(Math.max(0, teacherTexts.size() - 4), teacherTexts.size());
-        List<LlmMessage> prompt = prompts.build(profile, session, history, stuck, checkable ? found : null, weak, recent);
-
-        StringBuilder streamed = new StringBuilder();
-        Consumer<String> stream = new ReplyTextStream("reply_en", chunk -> {
-            streamed.append(chunk);
-            if (onText != null) {
-                onText.accept(chunk);
-            }
-        });
-        String raw = llm.chat(prompt, session.mode().temperature(), ReplySchema.schema(), stream);
-
-        TeacherReply parsed = ReplyPolish.dropEcho(
-                parser.parse(raw, streamed.toString(), session.cefr(), session.mode(), supportLevel), userText);
-
-        // Повтор или эхо — одна повторная попытка с более высокой температурой. Ученик увидит уже второй вариант.
-        if (ReplyPolish.isStale(parsed, userText, recent)) {
-            String second = llm.chat(prompt, Math.min(1.0, session.mode().temperature() + 0.3), ReplySchema.schema(), null);
-            TeacherReply retry = ReplyPolish.dropEcho(
-                    parser.parse(second, null, session.cefr(), session.mode(), supportLevel), userText);
-            if (!ReplyPolish.isStale(retry, userText, recent)) {
-                parsed = retry;
-            }
-        }
-
-        // Исправление показываем, только если оно подтверждено LT или модель точно указала ошибку
-        found = CorrectionPolicy.confirm(found, parsed.correction());
-        TeacherReply.Correction correction = checkable ? CorrectionPolicy.decide(userText, parsed.correction(), found) : null;
-        // к опечатке правило не нужно; правило показываем к грамматической ошибке, по просьбе и в режиме объяснения
-        boolean onlySpelling = correction != null && !found.isEmpty() && found.stream().allMatch(LtMatch::spelling)
-                && correction.errors().size() == found.size();
-        boolean explain = (correction != null && !onlySpelling) || stuck || session.mode() == LessonMode.EXPLAIN;
-        TeacherReply reply = new TeacherReply(parsed.replyEn(), parsed.replyRu(), correction,
-                explain ? parsed.explanation() : null, parsed.nextPrompt(), parsed.cardsToReview(),
-                parsed.mode(), parsed.cefr(), parsed.supportLevel());
+        TurnEngine.Output out = engine.run(
+                new TurnEngine.Input(profile, session, history, userText, stuck, errors.top(profile.id(), 3), null), onText);
+        TeacherReply reply = out.reply();
+        TeacherReply.Correction correction = reply.correction();
+        List<LtMatch> found = out.trusted();
 
         if (userMessage != null && correction != null) {
             journal(profile.id(), userMessage.id(), found, correction);
+            for (String slug : reply.cardsToReview()) {
+                reviews.noteMistake(profile.id(), slug);
+            }
         }
         ChatMessage saved = messages.add(sessionId, Role.ASSISTANT, reply.displayText(), mapper.writeValueAsString(reply));
         return new Turn(session, userMessage, saved, reply);
