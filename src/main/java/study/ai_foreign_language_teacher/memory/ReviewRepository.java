@@ -14,4 +14,6 @@ public interface ReviewRepository {
 
     /** Карточки, которые пора показать: срок не позже указанного момента. Сначала просроченные. */
     List<FsrsState> dueBy(long userId, Instant until);
+
+    List<FsrsState> allForUser(long userId);
 }

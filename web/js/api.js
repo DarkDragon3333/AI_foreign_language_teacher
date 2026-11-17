@@ -26,7 +26,14 @@ export const api = {
   review: () => request('GET', '/api/review'),
   rateReview: (slug, rating) => request('POST', `/api/review/${encodeURIComponent(slug)}`, { rating }),
   endSession: (sessionId) => request('POST', `/api/sessions/${sessionId}/end`),
+  scenarios: () => request('GET', '/api/scenarios'),
+  scenarioProgress: (sessionId) => request('GET', `/api/scenarios/sessions/${sessionId}`),
 };
+
+/** CSV для Anki; scope: fsrs (по умолчанию), due, catalog */
+export function downloadAnki(scope = 'fsrs') {
+  window.location.assign(`/api/export/anki?scope=${encodeURIComponent(scope)}`);
+}
 
 /** Запись с микрофона → текст. Не ставит Content-Type: границу формы ставит браузер. */
 export async function transcribe(blob, sessionId) {

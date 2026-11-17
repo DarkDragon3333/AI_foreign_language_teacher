@@ -15,7 +15,7 @@
 | 5 | STT (нажми и скажи) | готово |
 | 6 | TTS, озвучка ответа | готово |
 | 7 | Дуплексный голос: WebSocket + VAD + barge-in | готово (в репозитории) |
-| 8 | Экспорт в Anki, ролевые сценарии | — |
+| 8 | Экспорт в Anki, ролевые сценарии | готово |
 
 ## Запуск
 
@@ -59,9 +59,12 @@ docker compose up -d --build
 | POST | `/api/chat` | ход урока `{sessionId, text?, hint?}`, ответ — SSE (`delta`, `final`, `error`) |
 | POST | `/api/audio/stt` | «нажми и скажи»: файл записи → `{text}` |
 | POST | `/api/audio/tts` | озвучка английской реплики `{text}` → WAV |
+| GET | `/api/export/anki` | CSV для Anki (`?scope=fsrs|due|catalog`) |
+| GET | `/api/scenarios` | список ролевых сценариев |
+| GET | `/api/scenarios/sessions/{id}` | чеклист целей сценария в уроке |
 | WS | `/ws/voice` | дуплекс: PCM 16 kHz в binary, управление и ответы в JSON (см. ниже) |
 
-Режимы урока: `conversation`, `explain`, `correct`, `drill`.
+Режимы урока: `conversation`, `explain`, `correct`, `drill`, `roleplay` (сценарий в `topic` — slug из `/api/scenarios`).
 
 ## Как решается, что показать в «Исправлении»
 

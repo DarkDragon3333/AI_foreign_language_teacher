@@ -11,6 +11,8 @@ import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.llm.PromptBuilder;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
 import study.ai_foreign_language_teacher.memory.inmemory.MemoryReviewRepository;
+import study.ai_foreign_language_teacher.session.ScenarioCatalog;
+import study.ai_foreign_language_teacher.session.ScenarioService;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -60,7 +62,8 @@ class RuleCardsTest {
         RuleCard card = catalog.find("past_simple_ed").orElseThrow();
         UserProfile profile = new UserProfile(1, "A", "ru", "en", Cefr.A2, false);
         LessonSession session = new LessonSession(1, 1, LessonMode.CONVERSATION, null, Cefr.A2, 0, Instant.now(), null, null);
-        PromptBuilder prompts = new PromptBuilder(JsonMapper.builder().build());
+        var mapper = JsonMapper.builder().build();
+        PromptBuilder prompts = new PromptBuilder(mapper, new ScenarioService(new ScenarioCatalog(mapper)));
         String system = prompts.build(profile, session, List.of(), false, List.of(), List.of(), List.of(), List.of(card)).get(0).content();
         assertTrue(system.contains(card.rule()));
         assertTrue(system.contains("do not invent"));

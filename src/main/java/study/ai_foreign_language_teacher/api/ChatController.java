@@ -65,6 +65,9 @@ public class ChatController {
                 body.put("session", SessionView.of(turn.session()));
                 body.put("user", turn.userMessage() == null ? null : MessageView.of(turn.userMessage(), null));
                 body.put("teacher", MessageView.of(turn.teacherMessage(), turn.reply()));
+                if (turn.scenario() != null) {
+                    body.put("scenario", Dto.ScenarioProgressView.of(turn.scenario()));
+                }
                 send(emitter, clientGone, "final", body);
             } catch (IllegalArgumentException | NotFoundException | LlmException e) {
                 log.warn("Chat turn failed: {}", e.getMessage());

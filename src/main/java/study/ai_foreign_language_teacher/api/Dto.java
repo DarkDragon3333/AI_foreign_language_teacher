@@ -83,4 +83,25 @@ public final class Dto {
 
     public record ErrorView(String error) {
     }
+
+    public record ScenarioListItem(String slug, String title, String titleRu, String cefrMin, String cefrMax,
+                                   int goals) {
+        static ScenarioListItem of(study.ai_foreign_language_teacher.domain.RoleScenario s) {
+            return new ScenarioListItem(s.slug(), s.title(), s.titleRu(), s.cefrMin(), s.cefrMax(), s.goals().size());
+        }
+    }
+
+    public record ScenarioGoalView(String id, String textRu, String textEn, boolean done) {
+        static ScenarioGoalView of(study.ai_foreign_language_teacher.session.ScenarioService.GoalState g) {
+            return new ScenarioGoalView(g.id(), g.textRu(), g.textEn(), g.done());
+        }
+    }
+
+    public record ScenarioProgressView(String slug, String titleRu, String title, int done, int total,
+                                       java.util.List<ScenarioGoalView> goals) {
+        static ScenarioProgressView of(study.ai_foreign_language_teacher.session.ScenarioService.Progress p) {
+            return new ScenarioProgressView(p.slug(), p.titleRu(), p.title(), p.doneCount(), p.total(),
+                    p.goals().stream().map(ScenarioGoalView::of).toList());
+        }
+    }
 }

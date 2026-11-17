@@ -38,6 +38,16 @@ public class MemoryReviewRepository implements ReviewRepository {
                 .toList();
     }
 
+    @Override
+    public List<FsrsState> allForUser(long userId) {
+        String prefix = userId + ":";
+        return cards.entrySet().stream()
+                .filter(e -> e.getKey().startsWith(prefix))
+                .map(Map.Entry::getValue)
+                .sorted(Comparator.comparing(FsrsState::slug))
+                .toList();
+    }
+
     private static String key(long userId, String slug) {
         return userId + ":" + slug;
     }

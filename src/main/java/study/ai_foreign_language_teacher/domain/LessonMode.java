@@ -7,7 +7,8 @@ public enum LessonMode {
     CONVERSATION(0.7, "Free conversation on the topic. Keep the dialogue alive; correct briefly, then move on."),
     EXPLAIN(0.4, "Explain what the learner asks about: short rule, one good example, one bad example."),
     CORRECT(0.4, "The learner sends text to be corrected. Give the corrected version and explain each important error."),
-    DRILL(0.4, "Run short practice drills: give one small task per turn, check the answer, then give the next task.");
+    DRILL(0.4, "Run short practice drills: give one small task per turn, check the answer, then give the next task."),
+    ROLEPLAY(0.7, "Stay in character for a role-play scene. Short natural lines; correct briefly and return to the scene.");
 
     private final double temperature;
     private final String instruction;
@@ -39,7 +40,7 @@ public enum LessonMode {
         try {
             return valueOf(value.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown mode: " + value + " (expected conversation|explain|correct|drill)");
+            throw new IllegalArgumentException("Unknown mode: " + value + " (expected conversation|explain|correct|drill|roleplay)");
         }
     }
 }

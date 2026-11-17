@@ -83,7 +83,7 @@ public class TurnEngine {
         List<String> teacherTexts = in.history().stream().filter(m -> m.role() == Role.ASSISTANT).map(ChatMessage::text).toList();
         List<String> recent = teacherTexts.subList(Math.max(0, teacherTexts.size() - 4), teacherTexts.size());
         List<LlmMessage> prompt = prompts.build(in.profile(), session, in.history(), in.stuck(),
-                checkable ? found : null, in.weak(), recent, cards);
+                checkable ? found : null, in.weak(), recent, cards, session.id());
 
         StringBuilder streamed = new StringBuilder();
         Consumer<String> stream = new ReplyTextStream("answer_en", chunk -> {

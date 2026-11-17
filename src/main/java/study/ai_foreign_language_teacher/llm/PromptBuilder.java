@@ -4,11 +4,15 @@ import org.springframework.stereotype.Component;
 import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonSession;
+import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.RoleScenario;
 import study.ai_foreign_language_teacher.domain.RuleCard;
+import study.ai_foreign_language_teacher.domain.ScenarioGoal;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
+import study.ai_foreign_language_teacher.session.ScenarioService;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -16,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Собирает сообщения для LLM: system prompt (раздел 12) + короткая история + текущая реплика. */
 @Component
@@ -24,9 +29,11 @@ public class PromptBuilder {
     static final String LESSON_START = "[The lesson starts now. Greet the learner in one sentence and open the topic with a question.]";
 
     private final ObjectMapper mapper;
+    private final ScenarioService scenarios;
 
-    public PromptBuilder(ObjectMapper mapper) {
+    public PromptBuilder(ObjectMapper mapper, ScenarioService scenarios) {
         this.mapper = mapper;
+        this.scenarios = scenarios;
     }
 
     /**
@@ -57,9 +64,15 @@ public class PromptBuilder {
     public List<LlmMessage> build(UserProfile profile, LessonSession session, List<ChatMessage> history, boolean stuck,
                                   List<LtMatch> checker, List<ErrorEvent> weak, List<String> alreadyAsked,
                                   List<RuleCard> cards) {
+        return build(profile, session, history, stuck, checker, weak, alreadyAsked, cards, session.id());
+    }
+
+    public List<LlmMessage> build(UserProfile profile, LessonSession session, List<ChatMessage> history, boolean stuck,
+                                  List<LtMatch> checker, List<ErrorEvent> weak, List<String> alreadyAsked,
+                                  List<RuleCard> cards, long sessionId) {
         List<LlmMessage> messages = new ArrayList<>();
-        messages.add(LlmMessage.system(systemPrompt(profile, session, stuck) + checkerReport(checker) + weakPoints(weak)
-                + alreadyAsked(alreadyAsked) + ruleCards(cards)));
+        messages.add(LlmMessage.system(systemPrompt(profile, session, stuck) + rolePlay(session, sessionId)
+                + checkerReport(checker) + weakPoints(weak) + alreadyAsked(alreadyAsked) + ruleCards(cards)));
         for (ChatMessage m : history) {
             messages.add(m.role() == Role.USER
                     ? LlmMessage.user(m.text())
@@ -73,6 +86,9 @@ public class PromptBuilder {
 
     String systemPrompt(UserProfile profile, LessonSession session, boolean stuck) {
         String topic = session.topic() == null || session.topic().isBlank() ? "free choice — follow the learner's interests" : session.topic();
+        if (session.mode() == LessonMode.ROLEPLAY) {
+            topic = scenarios.promptContext(session).map(RoleScenario::topicLine).orElse(topic);
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 You are a friendly native-speaker English teacher in a one-to-one lesson.
@@ -111,6 +127,34 @@ public class PromptBuilder {
                 """);
         sb.append("\nSUPPORT\n").append(supportRule(session.supportLevel(), stuck));
         sb.append("\nAnswer with one JSON object only, following the given schema.\n");
+        return sb.toString();
+    }
+
+    String rolePlay(LessonSession session, long sessionId) {
+        if (session.mode() != LessonMode.ROLEPLAY) {
+            return "";
+        }
+        return scenarios.promptContext(session).map(s -> rolePlayBlock(s, scenarios.completedGoals(sessionId, session))).orElse("");
+    }
+
+    static String rolePlayBlock(RoleScenario scenario, Set<String> done) {
+        StringBuilder sb = new StringBuilder("""
+
+                ROLE-PLAY
+                Setting: """);
+        sb.append(scenario.setting()).append('\n');
+        sb.append("You are: ").append(scenario.teacherRole()).append(". The learner is: ")
+                .append(scenario.learnerRole()).append(".\n");
+        sb.append("""
+                Stay in character. Keep lines short and natural for the learner's CEFR level.
+                Correct mistakes briefly, then return to the scene. Do not read out the checklist of goals.
+                Nudge the learner toward goals they have not tried yet.
+                """);
+        sb.append("\nGoals (for your planning, not to recite):\n");
+        for (ScenarioGoal g : scenario.goals()) {
+            sb.append(done.contains(g.id()) ? "[done] " : "[ ] ");
+            sb.append(g.textEn()).append(" — ").append(g.textRu()).append('\n');
+        }
         return sb.toString();
     }
 

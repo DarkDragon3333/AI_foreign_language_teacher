@@ -1,0 +1,70 @@
+[
+  {
+    "slug": "cafe",
+    "title": "At a café",
+    "titleRu": "В кафе",
+    "setting": "A small coffee shop in London on a rainy afternoon.",
+    "teacherRole": "Friendly barista",
+    "learnerRole": "Customer",
+    "cefrMin": "A1",
+    "cefrMax": "B1",
+    "goals": [
+      {"id": "greet", "textRu": "Поприветствовать", "textEn": "Greet the staff", "hints": ["hello", "hi", "good morning", "good afternoon"]},
+      {"id": "order_drink", "textRu": "Заказать напиток", "textEn": "Order a drink", "hints": ["coffee", "tea", "latte", "cappuccino", "americano", "would like", "can i have"]},
+      {"id": "size_or_milk", "textRu": "Уточнить размер или молоко", "textEn": "Say size or milk preference", "hints": ["large", "small", "medium", "milk", "oat", "soy", "no sugar", "sugar"]},
+      {"id": "pay", "textRu": "Спросить про оплату или чек", "textEn": "Ask about paying or the bill", "hints": ["pay", "card", "cash", "bill", "receipt", "how much"]},
+      {"id": "thanks", "textRu": "Поблагодарить", "textEn": "Say thank you", "hints": ["thank", "thanks", "cheers"]}
+    ]
+  },
+  {
+    "slug": "job_interview",
+    "title": "Job interview",
+    "titleRu": "Собеседование",
+    "setting": "A first-round online interview for a junior office role.",
+    "teacherRole": "HR interviewer",
+    "learnerRole": "Candidate",
+    "cefrMin": "B1",
+    "cefrMax": "C1",
+    "goals": [
+      {"id": "introduce", "textRu": "Кратко представиться", "textEn": "Introduce yourself", "hints": ["my name", "i am", "i'm", "years old", "from"]},
+      {"id": "experience", "textRu": "Рассказать об опыте", "textEn": "Mention work experience or studies", "hints": ["worked", "experience", "studied", "university", "intern", "project"]},
+      {"id": "strength", "textRu": "Назвать сильную сторону", "textEn": "Name a strength", "hints": ["good at", "strength", "organized", "team", "communicate", "responsible"]},
+      {"id": "why_job", "textRu": "Объяснить, почему эта работа", "textEn": "Say why you want this job", "hints": ["because", "want", "interested", "role", "company", "learn"]},
+      {"id": "question_back", "textRu": "Задать вопрос интервьюеру", "textEn": "Ask the interviewer a question", "hints": ["?", "could you tell", "what is", "how does", "team", "typical day"]}
+    ]
+  },
+  {
+    "slug": "hotel",
+    "title": "Hotel check-in",
+    "titleRu": "Регистрация в отеле",
+    "setting": "Front desk of a city hotel, evening arrival.",
+    "teacherRole": "Receptionist",
+    "learnerRole": "Guest",
+    "cefrMin": "A2",
+    "cefrMax": "B2",
+    "goals": [
+      {"id": "greet", "textRu": "Поприветствовать", "textEn": "Greet the receptionist", "hints": ["hello", "good evening", "hi"]},
+      {"id": "reservation", "textRu": "Сказать о бронировании", "textEn": "Mention a reservation", "hints": ["reservation", "booked", "booking", "name is"]},
+      {"id": "room_type", "textRu": "Уточнить тип номера", "textEn": "Ask about the room", "hints": ["room", "double", "single", "bed", "view", "quiet"]},
+      {"id": "wifi_breakfast", "textRu": "Спросить про Wi‑Fi или завтрак", "textEn": "Ask about Wi‑Fi or breakfast", "hints": ["wifi", "wi-fi", "password", "breakfast", "included"]},
+      {"id": "thanks", "textRu": "Поблагодарить", "textEn": "Thank the staff", "hints": ["thank", "thanks"]}
+    ]
+  },
+  {
+    "slug": "doctor",
+    "title": "At the doctor",
+    "titleRu": "У врача",
+    "setting": "A GP clinic; the learner describes symptoms politely.",
+    "teacherRole": "Doctor",
+    "learnerRole": "Patient",
+    "cefrMin": "A2",
+    "cefrMax": "B2",
+    "goals": [
+      {"id": "greet", "textRu": "Поприветствовать", "textEn": "Greet the doctor", "hints": ["hello", "good morning"]},
+      {"id": "symptom", "textRu": "Описать симптом", "textEn": "Describe a symptom", "hints": ["hurt", "pain", "ache", "fever", "cough", "headache", "sore", "feel"]},
+      {"id": "duration", "textRu": "Сказать, как давно", "textEn": "Say how long it has lasted", "hints": ["since", "for", "days", "week", "yesterday", "morning"]},
+      {"id": "medication", "textRu": "Спросить про лекарство или совет", "textEn": "Ask about medicine or advice", "hints": ["medicine", "pill", "should i", "recommend", "rest", "drink"]},
+      {"id": "thanks", "textRu": "Поблагодарить", "textEn": "Say thank you", "hints": ["thank", "thanks"]}
+    ]
+  }
+]

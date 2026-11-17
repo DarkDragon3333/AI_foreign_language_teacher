@@ -299,6 +299,9 @@ public class VoiceWebSocketHandler extends AbstractWebSocketHandler {
                 body.put("session", SessionView.of(turn.session()));
                 body.put("user", turn.userMessage() == null ? null : MessageView.of(turn.userMessage(), null));
                 body.put("teacher", MessageView.of(turn.teacherMessage(), turn.reply()));
+                if (turn.scenario() != null) {
+                    body.put("scenario", Dto.ScenarioProgressView.of(turn.scenario()));
+                }
                 sendQuiet(body);
                 if (cancelSpeech.get()) {
                     setPhase(Phase.LISTEN);

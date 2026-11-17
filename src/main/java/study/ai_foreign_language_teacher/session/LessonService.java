@@ -50,10 +50,11 @@ public class LessonService {
     private final LlmClient llm;
     private final ObjectMapper mapper;
     private final TutorProperties props;
+    private final ScenarioService scenarios;
 
     public LessonService(ProfileRepository profiles, SessionRepository sessions, MessageRepository messages,
                          ErrorRepository errors, TurnEngine engine, ReviewService reviews, LlmClient llm,
-                         ObjectMapper mapper, TutorProperties props) {
+                         ObjectMapper mapper, TutorProperties props, ScenarioService scenarios) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.messages = messages;
@@ -63,6 +64,7 @@ public class LessonService {
         this.llm = llm;
         this.mapper = mapper;
         this.props = props;
+        this.scenarios = scenarios;
     }
 
     public LessonSession startSession(String cefr, String topic, String mode, String model) {
@@ -76,7 +78,18 @@ public class LessonService {
         if (cleanModel != null && llm.models().stream().noneMatch(m -> m.name().equals(cleanModel))) {
             throw new IllegalArgumentException("Model " + cleanModel + " is not installed in Ollama");
         }
-        return sessions.create(profile.id(), LessonMode.parse(mode), cleanTopic, level, cleanModel);
+        LessonMode lessonMode = LessonMode.parse(mode);
+        if (lessonMode == LessonMode.ROLEPLAY) {
+            if (cleanTopic == null) {
+                throw new IllegalArgumentException("Choose a scenario (topic = scenario slug) for roleplay mode");
+            }
+            scenarios.findForStart(cleanTopic);
+        }
+        LessonSession session = sessions.create(profile.id(), lessonMode, cleanTopic, level, cleanModel);
+        if (lessonMode == LessonMode.ROLEPLAY) {
+            scenarios.start(session.id(), cleanTopic);
+        }
+        return session;
     }
 
     public LessonSession getSession(long id) {
@@ -107,6 +120,7 @@ public class LessonService {
     public LessonSession endSession(long id) {
         getSession(id);
         sessions.end(id);
+        scenarios.clear(id);
         return getSession(id);
     }
 
@@ -144,6 +158,7 @@ public class LessonService {
         ChatMessage userMessage = null;
         if (!userText.isEmpty()) {
             userMessage = messages.add(sessionId, Role.USER, userText, null);
+            scenarios.onUserMessage(sessionId, session, userText);
         } else if (hintRequested) {
             userMessage = messages.add(sessionId, Role.USER, "I need a hint, please.", null);
         }
@@ -163,7 +178,8 @@ public class LessonService {
             }
         }
         ChatMessage saved = messages.add(sessionId, Role.ASSISTANT, reply.displayText(), mapper.writeValueAsString(reply));
-        return new Turn(session, userMessage, saved, reply);
+        session = getSession(sessionId);
+        return new Turn(session, userMessage, saved, reply, scenarios.progress(sessionId, session).orElse(null));
     }
 
     /** Журнал ошибок: находки LT — под id правила LT, остальное — под названием правила от модели. */
@@ -185,6 +201,7 @@ public class LessonService {
         return errors.top(profiles.getOrCreateDefault().id(), limit);
     }
 
-    public record Turn(LessonSession session, ChatMessage userMessage, ChatMessage teacherMessage, TeacherReply reply) {
+    public record Turn(LessonSession session, ChatMessage userMessage, ChatMessage teacherMessage, TeacherReply reply,
+                       ScenarioService.Progress scenario) {
     }
 }

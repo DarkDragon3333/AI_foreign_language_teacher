@@ -64,6 +64,13 @@ public class JdbcReviewRepository implements ReviewRepository {
                 .query(JdbcReviewRepository::map).list();
     }
 
+    @Override
+    public List<FsrsState> allForUser(long userId) {
+        return jdbc.sql("SELECT * FROM fsrs_cards WHERE user_id = :userId ORDER BY slug")
+                .param("userId", userId)
+                .query(JdbcReviewRepository::map).list();
+    }
+
     private static FsrsState map(ResultSet rs, int row) throws SQLException {
         Timestamp last = rs.getTimestamp("last_review");
         return new FsrsState(

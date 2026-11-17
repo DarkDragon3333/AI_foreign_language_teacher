@@ -1,4 +1,4 @@
-import { api } from './api.js?v=14';
+import { api, downloadAnki } from './api.js?v=15';
 
 const $ = (id) => document.getElementById(id);
 
@@ -92,6 +92,8 @@ async function answer(rating) {
   }
   busy = false;
 }
+
+$('export-anki-fsrs').addEventListener('click', () => downloadAnki('fsrs'));
 
 function when(days) {
   if (days === 1) return 'завтра';

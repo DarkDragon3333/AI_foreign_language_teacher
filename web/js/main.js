@@ -1,16 +1,21 @@
-import { api, chatTurn, transcribe } from './api.js?v=14';
+import { api, chatTurn, transcribe } from './api.js?v=15';
 import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=14';
-import { openReview, refreshReviewCount } from './review.js?v=14';
+import { openReview, refreshReviewCount } from './review.js?v=15';
 import { VoiceDuplex } from './voice.js?v=15';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-const MODE_NAMES = { conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка' };
+const MODE_NAMES = {
+  conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка', roleplay: 'Ролевая игра',
+};
 // что даст следующее нажатие «Подсказка»: ступени support_level 1..3
 const HINT_STEPS = ['· правило', '· пример', '· ответ', '· ответ'];
 const C_LEVEL_NOTE = 'На уровнях C1–C2 стиль небольшой локальной модели упрощён: нюансы и идиомы она передаёт хуже живого преподавателя.';
 
 const $ = (id) => document.getElementById(id);
-const state = { session: null, level: 'B1', busy: false, tab: 'lesson', voiceDuplex: null, voicePlaceholder: null };
+const state = {
+  session: null, level: 'B1', busy: false, tab: 'lesson', voiceDuplex: null, voicePlaceholder: null,
+  scenarios: [], scenarioProgress: null,
+};
 
 // ---------- тема оформления ----------
 
@@ -57,10 +62,38 @@ function renderLevelPicker() {
 
 function showStart() {
   state.session = null;
+  state.scenarioProgress = null;
+  $('scenario-panel').hidden = true;
   disableVoiceDuplex(false);
   renderLevelPicker();
+  syncStartForm();
   showTab(state.tab);
 }
+
+function syncStartForm() {
+  const roleplay = $('mode').value === 'roleplay';
+  $('scenario-wrap').hidden = !roleplay;
+  $('topic-wrap').hidden = roleplay;
+}
+
+async function loadScenarios() {
+  if (state.scenarios.length) return;
+  try {
+    state.scenarios = await api.scenarios();
+    const select = $('scenario');
+    select.textContent = '';
+    for (const s of state.scenarios) {
+      const option = document.createElement('option');
+      option.value = s.slug;
+      option.textContent = `${s.titleRu} (${s.cefrMin}–${s.cefrMax})`;
+      select.append(option);
+    }
+  } catch {
+    state.scenarios = [];
+  }
+}
+
+$('mode').addEventListener('change', syncStartForm);
 
 // ---------- разделы: урок / журнал ошибок ----------
 
@@ -128,7 +161,9 @@ $('start-form').addEventListener('submit', async (event) => {
   try {
     // выбранный уровень запоминаем в профиле — он станет уровнем по умолчанию
     await api.updateProfile({ cefr: state.level });
-    const session = await api.startSession({ cefr: state.level, topic: $('topic').value, mode: $('mode').value });
+    const mode = $('mode').value;
+    const topic = mode === 'roleplay' ? $('scenario').value : $('topic').value;
+    const session = await api.startSession({ cefr: state.level, topic, mode });
     showLesson(session, []);
     await turn('', false); // учитель начинает урок сам
   } catch (e) {
@@ -151,16 +186,50 @@ function showLesson(session, messages) {
     list.append(m.role === 'user' ? userMessage(m.text) : teacherMessage(m.reply, m.text));
   }
   applySession(session);
+  if (session.mode === 'roleplay') refreshScenarioPanel();
   syncVoiceControls();
   scrollDown();
   $('input').focus();
+}
+
+function renderScenarioProgress(progress) {
+  if (!progress) {
+    $('scenario-panel').hidden = true;
+    return;
+  }
+  state.scenarioProgress = progress;
+  $('scenario-panel').hidden = false;
+  $('scenario-title').textContent = progress.titleRu + ' — цели ' + progress.done + '/' + progress.total;
+  const list = $('scenario-goals');
+  list.textContent = '';
+  for (const g of progress.goals) {
+    const li = document.createElement('li');
+    li.className = g.done ? 'done' : '';
+    li.textContent = (g.done ? '✓ ' : '○ ') + g.textRu;
+    list.append(li);
+  }
+}
+
+async function refreshScenarioPanel() {
+  if (!state.session || state.session.mode !== 'roleplay') {
+    renderScenarioProgress(null);
+    return;
+  }
+  try {
+    renderScenarioProgress(await api.scenarioProgress(state.session.id));
+  } catch {
+    renderScenarioProgress(state.scenarioProgress);
+  }
 }
 
 function applySession(session) {
   state.session = session;
   $('lesson-level').textContent = session.cefr;
   $('lesson-mode').textContent = MODE_NAMES[session.mode] || session.mode;
-  $('lesson-topic').textContent = session.topic || '';
+  const topicLabel = session.mode === 'roleplay'
+    ? (state.scenarios.find((s) => s.slug === session.topic)?.titleRu || session.topic)
+    : (session.topic || '');
+  $('lesson-topic').textContent = topicLabel;
   $('hint-level').textContent = HINT_STEPS[Math.min(session.supportLevel, 3)];
   const index = LEVELS.indexOf(session.cefr);
   $('easier').disabled = state.busy || index <= 0;
@@ -213,6 +282,7 @@ async function enableVoiceDuplex() {
         }
         state.voicePlaceholder.finish(payload.teacher.reply, payload.teacher.text);
         applySession(payload.session);
+        if (payload.scenario) renderScenarioProgress(payload.scenario);
         state.voicePlaceholder = null;
         scrollDown();
         refreshReviewCount();
@@ -390,6 +460,7 @@ async function turn(text, hint, aloud) {
         if (!shownUser && payload.user) placeholder.node.before(userMessage(payload.user.text));
         placeholder.finish(payload.teacher.reply, payload.teacher.text);
         applySession(payload.session);
+        if (payload.scenario) renderScenarioProgress(payload.scenario);
         if (aloud) {
           speakMessage(placeholder.node).catch(() => setStatus('Нажмите «Слушать», чтобы услышать ответ'));
         }
@@ -488,6 +559,7 @@ function fatal(message) {
 async function boot() {
   refreshHealth();
   setInterval(refreshHealth, 30000);
+  await loadScenarios();
   try {
     const profile = await api.profile();
     state.level = profile.cefr;

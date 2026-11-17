@@ -236,3 +236,11 @@ main:has(#models:not([hidden])) { max-width: 1200px; }
 .badge.pass { background: var(--good-soft); color: var(--good); }
 .badge.fail { background: var(--bad-soft); color: var(--bad); }
 .score { font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--accent-soft); }
+
+/* ---- ролевой сценарий и экспорт Anki ---- */
+.scenario-panel { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.scenario-title { margin: 0 0 6px; font-size: 16px; }
+.scenario-goals { margin: 8px 0 0; padding-left: 1.2rem; }
+.scenario-goals li { margin: 4px 0; }
+.scenario-goals li.done { color: var(--good); }
+.review-export { margin: 12px 0 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

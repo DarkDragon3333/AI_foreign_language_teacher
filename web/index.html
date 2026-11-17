@@ -10,7 +10,7 @@
     try { document.documentElement.dataset.theme = localStorage.getItem('tutor-theme') || 'blue'; }
     catch (e) { document.documentElement.dataset.theme = 'blue'; }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=14">
+  <link rel="stylesheet" href="/css/app.css?v=15">
 </head>
 <body>
   <header class="topbar">
@@ -49,10 +49,14 @@
             <option value="explain">Объяснение — разобрать правило</option>
             <option value="correct">Проверка — исправить мой текст</option>
             <option value="drill">Тренировка — короткие упражнения</option>
+            <option value="roleplay">Ролевая игра — сценарий с целями</option>
           </select>
         </label>
-        <label>Тема <span class="muted">(необязательно)</span>
-          <input id="topic" type="text" maxlength="200" placeholder="travel, job interview, Present Perfect…" autocomplete="off">
+        <label id="scenario-wrap" hidden>Сценарий
+          <select id="scenario"></select>
+        </label>
+        <label id="topic-wrap">Тема <span class="muted">(необязательно)</span>
+          <input id="topic" type="text" maxlength="200" placeholder="travel, Present Perfect…" autocomplete="off">
         </label>
         <button type="submit" class="primary">Начать урок</button>
       </form>
@@ -60,6 +64,11 @@
 
     <!-- Экран 2: чат урока -->
     <section id="lesson" hidden>
+      <aside id="scenario-panel" class="scenario-panel" hidden>
+        <h2 id="scenario-title" class="scenario-title"></h2>
+        <p class="note">Отмечаются автоматически, когда в реплике есть нужные слова или вопрос.</p>
+        <ul id="scenario-goals" class="scenario-goals"></ul>
+      </aside>
       <div class="lesson-bar">
         <div class="lesson-info">
           <span id="lesson-mode" class="chip chip-plain"></span>
@@ -119,6 +128,10 @@
     <section id="review" class="card" hidden>
       <h1>Повторить сегодня</h1>
       <p id="review-lead" class="note">Правила, на которых вы ошибались. Срок считает алгоритм интервальных повторений: снова сегодня, завтра, через несколько дней или через пару недель.</p>
+      <p class="review-export">
+        <button id="export-anki-fsrs" type="button">Скачать CSV для Anki</button>
+        <span class="muted">— карточки из вашего повторения (ошибки в уроках). В Anki: Файл → Импорт, разделитель — запятая.</span>
+      </p>
       <p id="review-empty" class="muted" hidden>Сегодня повторять нечего. Карточка появится здесь после ошибки в уроке.</p>
       <p id="review-status" class="status" hidden></p>
       <article id="review-card" class="review-card" hidden>
@@ -147,6 +160,6 @@
     <p id="fatal" class="fatal" hidden></p>
   </main>
 
-  <script type="module" src="/js/main.js?v=14"></script>
+  <script type="module" src="/js/main.js?v=15"></script>
 </body>
 </html>
