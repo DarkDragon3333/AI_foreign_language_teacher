@@ -6,7 +6,7 @@ import java.time.Duration;
 
 /** Настройки из application.properties с префиксом "tutor". */
 @ConfigurationProperties(prefix = "tutor")
-public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson, Embed embed, Stt stt) {
+public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson, Embed embed, Stt stt, Tts tts) {
 
     public record Ollama(
             String baseUrl,
@@ -35,5 +35,9 @@ public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson l
 
     /** Распознавание речи на CPU. Видеопамять не занимает. Пустой language — язык определяется по фразе. */
     public record Stt(String baseUrl, boolean enabled, String language, Duration timeout) {
+    }
+
+    /** Озвучка английской реплики на CPU. Видеопамять не занимает. */
+    public record Tts(String baseUrl, boolean enabled, String voice, Duration timeout) {
     }
 }

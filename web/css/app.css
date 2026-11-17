@@ -178,8 +178,9 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .journal .rule-category { color: var(--muted); font-size: 12px; }
 @media (max-width: 560px) { .tabs { margin-left: 8px; } .brand-sub { display: none; } }
 
-.translate { display: block; margin-top: 4px; padding: 4px 8px; border: none; background: transparent; color: var(--muted); font-size: 13px; }
-.translate:hover:not(:disabled) { color: var(--ink); }
+.translate, .listen { display: block; margin-top: 4px; padding: 4px 8px; border: none; background: transparent; color: var(--muted); font-size: 13px; }
+.translate:hover:not(:disabled), .listen:hover:not(:disabled) { color: var(--ink); }
+.listen[aria-pressed="true"] { color: var(--accent); }
 
 /* ---- выбор темы ---- */
 .topbar-right { display: flex; align-items: center; gap: 16px; }

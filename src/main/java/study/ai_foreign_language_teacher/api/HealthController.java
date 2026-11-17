@@ -10,6 +10,7 @@ import study.ai_foreign_language_teacher.memory.StorageHealth;
 import study.ai_foreign_language_teacher.memory.rules.EmbeddingClient;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.speech.SttClient;
+import study.ai_foreign_language_teacher.speech.TtsClient;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,14 +25,16 @@ public class HealthController {
     private final GrammarChecker checker;
     private final EmbeddingClient embeddings;
     private final SttClient speech;
+    private final TtsClient tts;
 
     public HealthController(LlmClient llm, StorageHealth storage, GrammarChecker checker, EmbeddingClient embeddings,
-                            SttClient speech) {
+                            SttClient speech, TtsClient tts) {
         this.llm = llm;
         this.storage = storage;
         this.checker = checker;
         this.embeddings = embeddings;
         this.speech = speech;
+        this.tts = tts;
     }
 
     @GetMapping("/health")
@@ -49,7 +52,8 @@ public class HealthController {
         components.put("embed", component(embedUp, embeddings.statusDetail()));
         boolean sttUp = !speech.enabled() || speech.ready();
         components.put("stt", component(sttUp, speech.statusDetail()));
-        // tts добавится на шаге 6
+        boolean ttsUp = !tts.enabled() || tts.ready();
+        components.put("tts", component(ttsUp, tts.statusDetail()));
 
         boolean up = ollama.up() && storageUp && lt.up();
         Map<String, Object> body = new LinkedHashMap<>();

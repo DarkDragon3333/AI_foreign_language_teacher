@@ -1,5 +1,71 @@
 // Отрисовка реплик. Весь текст вставляется через textContent — HTML из ответа модели не исполняется.
 
+import { speak } from './api.js?v=13';
+
+let current = null;
+
+export function stopSpeaking() {
+  if (!current) return;
+  current.audio.pause();
+  URL.revokeObjectURL(current.url);
+  current.button.textContent = 'Слушать';
+  current.button.setAttribute('aria-pressed', 'false');
+  current = null;
+}
+
+function play(button) {
+  if (button.dataset.loading === '1') return Promise.resolve();
+  if (current && current.button === button) {
+    stopSpeaking();
+    return Promise.resolve();
+  }
+  stopSpeaking();
+  button.dataset.loading = '1';
+  button.disabled = true;
+  button.textContent = '…';
+  return speak(button.dataset.text).then((url) => {
+    const audio = new Audio(url);
+    current = { button, audio, url };
+    button.textContent = 'Стоп';
+    button.setAttribute('aria-pressed', 'true');
+    audio.addEventListener('ended', () => {
+      if (current && current.audio === audio) stopSpeaking();
+    });
+    return audio.play();
+  }).catch((error) => {
+    if (current && current.button === button) stopSpeaking();
+    button.title = error.message;
+    throw error;
+  }).finally(() => {
+    button.dataset.loading = '0';
+    button.disabled = false;
+    if (!current || current.button !== button) {
+      button.textContent = 'Слушать';
+      button.setAttribute('aria-pressed', 'false');
+    }
+  });
+}
+
+function listenButton(text) {
+  const button = el('button', 'listen', 'Слушать');
+  button.type = 'button';
+  button.dataset.text = text;
+  button.setAttribute('aria-pressed', 'false');
+  button.addEventListener('click', () => {
+    play(button).catch((error) => {
+      window.dispatchEvent(new CustomEvent('tutor-speak-error', { detail: error.message }));
+    });
+  });
+  return button;
+}
+
+/** Озвучить уже показанную реплику. Если плеер браузера запретит автозапуск, кнопка останется. */
+export function speakMessage(node) {
+  const button = node.querySelector('.listen');
+  if (!button || button.getAttribute('aria-pressed') === 'true') return Promise.resolve();
+  return play(button);
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -91,14 +157,16 @@ function markSpans(line, text, spans) {
 function fillTeacher(wrap, bubble, reply, fallbackText) {
   bubble.classList.remove('cursor');
   bubble.textContent = '';
-  wrap.querySelectorAll('.extra, .translate').forEach((n) => n.remove());
+  wrap.querySelectorAll('.extra, .translate, .listen').forEach((n) => n.remove());
 
   if (!reply) {
     bubble.textContent = fallbackText || '';
+    if (bubble.textContent.trim()) wrap.append(listenButton(bubble.textContent.trim()));
     return;
   }
   // одна реплика учителя обычным текстом: ответ и следующий вопрос подряд
   bubble.textContent = reply.next_prompt ? reply.reply_en + ' ' + reply.next_prompt : reply.reply_en;
+  if (bubble.textContent.trim()) wrap.append(listenButton(bubble.textContent.trim()));
 
   const c = reply.correction;
   if (c) {

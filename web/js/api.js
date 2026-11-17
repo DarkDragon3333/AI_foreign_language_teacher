@@ -41,6 +41,21 @@ export async function transcribe(blob) {
   return data.text;
 }
 
+/** Английский текст реплики → адрес WAV, который можно отдать плееру. */
+export async function speak(text) {
+  const response = await fetch('/api/audio/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    let data = null;
+    try { data = await response.json(); } catch { /* тело может быть пустым */ }
+    throw new Error((data && data.error) || `Озвучка недоступна (${response.status})`);
+  }
+  return URL.createObjectURL(await response.blob());
+}
+
 /**
  * Ход урока. Ответ приходит потоком SSE; EventSource не умеет POST, поэтому читаем поток вручную.
  * handlers: { delta(text), final(payload), error(message) }

@@ -1,6 +1,6 @@
-import { api, chatTurn, transcribe } from './api.js?v=12';
-import { userMessage, teacherMessage, teacherPlaceholder } from './render.js?v=12';
-import { openReview, refreshReviewCount } from './review.js?v=12';
+import { api, chatTurn, transcribe } from './api.js?v=13';
+import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=13';
+import { openReview, refreshReviewCount } from './review.js?v=13';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const MODE_NAMES = { conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка' };
@@ -190,6 +190,7 @@ function setTalking(on) {
 
 async function startTalk() {
   if (state.busy || talk.recorder || talk.arming) return;
+  stopSpeaking();
   talk.arming = true;
   let stream;
   try {
@@ -233,13 +234,15 @@ function stopTalk() {
     try {
       const text = await transcribe(blob);
       setStatus('');
-      turn(text, false);
+      turn(text, false, true);
     } catch (e) {
       setStatus(e.message, true);
     }
   };
   recorder.stop();
 }
+
+window.addEventListener('tutor-speak-error', (event) => setStatus(event.detail, true));
 
 const talkButton = $('talk');
 talkButton.addEventListener('pointerdown', (event) => {
@@ -265,7 +268,7 @@ function scrollDown() {
   list.scrollTop = list.scrollHeight;
 }
 
-async function turn(text, hint) {
+async function turn(text, hint, aloud) {
   if (state.busy || !state.session) return;
   setBusy(true);
   setStatus('Учитель думает…');
@@ -284,6 +287,9 @@ async function turn(text, hint) {
         if (!shownUser && payload.user) placeholder.node.before(userMessage(payload.user.text));
         placeholder.finish(payload.teacher.reply, payload.teacher.text);
         applySession(payload.session);
+        if (aloud) {
+          speakMessage(placeholder.node).catch(() => setStatus('Нажмите «Слушать», чтобы услышать ответ'));
+        }
       },
       error(message) { failure = message; },
     });

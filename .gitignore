@@ -36,3 +36,10 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# стенд сравнения моделей
+/eval/
+src/main/java/study/ai_foreign_language_teacher/eval/
+src/test/java/study/ai_foreign_language_teacher/eval/
+src/main/java/study/ai_foreign_language_teacher/api/EvalController.java
+web/js/models.js
