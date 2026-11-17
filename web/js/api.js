@@ -29,9 +29,10 @@ export const api = {
 };
 
 /** Запись с микрофона → текст. Не ставит Content-Type: границу формы ставит браузер. */
-export async function transcribe(blob) {
+export async function transcribe(blob, sessionId) {
   const body = new FormData();
   body.append('file', blob, 'speech.webm');
+  if (sessionId != null) body.append('sessionId', String(sessionId));
   const response = await fetch('/api/audio/stt', { method: 'POST', body });
   let data = null;
   try { data = await response.json(); } catch { /* не JSON */ }

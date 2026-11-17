@@ -6,7 +6,8 @@ import java.time.Duration;
 
 /** Настройки из application.properties с префиксом "tutor". */
 @ConfigurationProperties(prefix = "tutor")
-public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson, Embed embed, Stt stt, Tts tts) {
+public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson lesson, Embed embed, Stt stt, Tts tts,
+                              Voice voice) {
 
     public record Ollama(
             String baseUrl,
@@ -39,5 +40,17 @@ public record TutorProperties(Ollama ollama, LanguageTool languagetool, Lesson l
 
     /** Озвучка английской реплики на CPU. Видеопамять не занимает. */
     public record Tts(String baseUrl, boolean enabled, String voice, Duration timeout) {
+    }
+
+    /** Голосовой дуплекс: PCM 16 kHz и пороги энергетического VAD на сервере. */
+    public record Voice(
+            int sampleRate,
+            int frameSamples,
+            Duration silence,
+            Duration minSpeech,
+            Duration maxUtterance,
+            int rmsThreshold,
+            int bargeInThreshold,
+            Duration bargeInHold) {
     }
 }

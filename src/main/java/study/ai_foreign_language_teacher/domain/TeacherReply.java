@@ -44,8 +44,13 @@ public record TeacherReply(
     /** Текст, который видит ученик в чате. */
     public String displayText() {
         if (nextPrompt == null || nextPrompt.isBlank()) {
-            return replyEn;
+            return replyEn == null ? "" : replyEn;
         }
-        return replyEn + " " + nextPrompt;
+        String answer = replyEn == null ? "" : replyEn.strip();
+        String question = nextPrompt.strip();
+        if (answer.isEmpty()) {
+            return question;
+        }
+        return answer + " " + question;
     }
 }

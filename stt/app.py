@@ -2,7 +2,7 @@ import os
 import tempfile
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Query, UploadFile
 from faster_whisper import WhisperModel
 
 MODEL_NAME = os.environ.get("WHISPER_MODEL", "small")
@@ -35,8 +35,20 @@ def health():
     }
 
 
+def resolve_language(override: str | None) -> str | None:
+    raw = (override or "").strip()
+    if raw.lower() in ("", "auto"):
+        raw = LANGUAGE or ""
+    raw = raw.strip()
+    return raw or None
+
+
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str | None = Query(None),
+    prompt: str | None = Query(None),
+):
     data = await file.read()
     if not data:
         return {"text": "", "language": None}
@@ -46,9 +58,12 @@ async def transcribe(file: UploadFile = File(...)):
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(data)
             path = tmp.name
+        lang = resolve_language(language)
+        hint = (prompt or "").strip()[:220] or None
         segments, info = model.transcribe(
             path,
-            language=LANGUAGE,
+            language=lang,
+            initial_prompt=hint,
             vad_filter=True,
             beam_size=1,
             condition_on_previous_text=False,

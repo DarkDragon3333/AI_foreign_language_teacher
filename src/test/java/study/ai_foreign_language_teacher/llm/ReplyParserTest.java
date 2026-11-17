@@ -146,6 +146,23 @@ class ReplyParserTest {
     }
 
     @Test
+    void trailingCommaBeforeFollowUpIsRemoved() {
+        TeacherReply r = parse("""
+                {"reply_en":"Cats love playing.,","next_prompt":"Do you play with Vasya?"}""");
+        assertEquals("Cats love playing.", r.replyEn());
+        assertEquals("Do you play with Vasya?", r.nextPrompt());
+        assertEquals("Cats love playing. Do you play with Vasya?", r.displayText());
+    }
+
+    @Test
+    void leadingCommaOnFollowUpIsRemoved() {
+        TeacherReply r = parse("""
+                {"reply_en":"That is nice.","next_prompt":", What is your favorite thing?"}""");
+        assertEquals("What is your favorite thing?", r.nextPrompt());
+        assertEquals("That is nice. What is your favorite thing?", r.displayText());
+    }
+
+    @Test
     void emptyCorrectionInTheNewFormatIsDropped() {
         TeacherReply r = parse("{\"answer_en\":\"Good!\",\"correction\":{\"errors\":[],\"fixed_text\":\"\"},\"follow_up_question\":\"And you?\"}");
         assertNull(r.correction());

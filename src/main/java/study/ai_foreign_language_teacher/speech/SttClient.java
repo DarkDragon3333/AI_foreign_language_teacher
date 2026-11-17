@@ -8,9 +8,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -34,8 +36,20 @@ public class SttClient {
         return cfg.enabled();
     }
 
+    /** PCM int16 mono → текст. */
+    public String transcribePcm16(byte[] pcm, int sampleRate, String prompt) {
+        if (pcm == null || pcm.length < sampleRate / 5) {
+            return "";
+        }
+        return transcribe(WavPcm.wrap(pcm, sampleRate), "audio/wav", prompt);
+    }
+
     /** Текст фразы. Пустая строка — в записи не нашлось слов. */
     public String transcribe(byte[] audio, String contentType) {
+        return transcribe(audio, contentType, null);
+    }
+
+    public String transcribe(byte[] audio, String contentType, String prompt) {
         if (!cfg.enabled()) {
             throw new IllegalArgumentException("Распознавание речи выключено");
         }
@@ -46,7 +60,7 @@ public class SttClient {
         String type = contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType;
         byte[] body = multipart(boundary, audio, type);
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(cfg.baseUrl() + "/transcribe"))
+            HttpRequest request = HttpRequest.newBuilder(URI.create(transcribeUrl(prompt)))
                     .timeout(cfg.timeout())
                     .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
@@ -86,6 +100,26 @@ public class SttClient {
             return "выключен";
         }
         return ready() ? cfg.baseUrl() : "не отвечает";
+    }
+
+    private String transcribeUrl(String prompt) {
+        String base = cfg.baseUrl() + "/transcribe";
+        StringBuilder query = new StringBuilder();
+        String lang = cfg.language();
+        if (lang != null && !lang.isBlank() && !"auto".equalsIgnoreCase(lang)) {
+            query.append("language=").append(URLEncoder.encode(lang.strip(), StandardCharsets.UTF_8));
+        }
+        if (prompt != null && !prompt.isBlank()) {
+            if (query.length() > 0) {
+                query.append('&');
+            }
+            String clipped = prompt.length() > 220 ? prompt.substring(0, 220) : prompt;
+            query.append("prompt=").append(URLEncoder.encode(clipped.strip(), StandardCharsets.UTF_8));
+        }
+        if (query.length() == 0) {
+            return base;
+        }
+        return base + '?' + query;
     }
 
     private static byte[] multipart(String boundary, byte[] audio, String contentType) {

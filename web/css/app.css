@@ -149,6 +149,11 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .status.error { color: var(--bad); }
 
 .composer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.voice-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 6px 2px 0; font-size: 14px; color: var(--muted); }
+.voice-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.voice-mode select { margin-left: 4px; max-width: 260px; }
+.voice-phase { font-size: 13px; color: var(--accent); }
+.voice-phase::before { content: "· "; color: var(--muted); }
 .composer textarea { border: none; background: transparent; padding: 4px 6px; }
 .composer textarea:focus-visible { outline: none; }
 .composer:focus-within { border-color: var(--accent); }

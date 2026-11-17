@@ -10,7 +10,7 @@
     try { document.documentElement.dataset.theme = localStorage.getItem('tutor-theme') || 'blue'; }
     catch (e) { document.documentElement.dataset.theme = 'blue'; }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=13">
+  <link rel="stylesheet" href="/css/app.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -80,6 +80,20 @@
 
       <form id="chat-form" class="composer">
         <textarea id="input" rows="2" maxlength="2000" placeholder="Напишите ответ по-английски. Enter — отправить, Shift+Enter — новая строка"></textarea>
+        <div class="voice-bar">
+          <label class="voice-toggle">
+            <input id="voice-duplex" type="checkbox">
+            Свободный голос
+          </label>
+          <label id="voice-mode-wrap" class="voice-mode" hidden>
+            Режим
+            <select id="voice-mode">
+              <option value="handsfree">без кнопки (тишина = конец фразы)</option>
+              <option value="ptt">кнопка «Говорить»</option>
+            </select>
+          </label>
+          <span id="voice-phase" class="voice-phase" hidden></span>
+        </div>
         <div class="composer-buttons">
           <button id="hint" type="button" title="Учитель подскажет: сначала намёк, потом правило, пример и ответ">Подсказка <span id="hint-level"></span></button>
           <div class="composer-send">
@@ -133,6 +147,6 @@
     <p id="fatal" class="fatal" hidden></p>
   </main>
 
-  <script type="module" src="/js/main.js?v=13"></script>
+  <script type="module" src="/js/main.js?v=14"></script>
 </body>
 </html>

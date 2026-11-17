@@ -1,6 +1,6 @@
 // Отрисовка реплик. Весь текст вставляется через textContent — HTML из ответа модели не исполняется.
 
-import { speak } from './api.js?v=13';
+import { speak } from './api.js?v=14';
 
 let current = null;
 

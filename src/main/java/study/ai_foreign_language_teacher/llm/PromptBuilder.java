@@ -94,6 +94,7 @@ public class PromptBuilder {
                 - Fill "explanation" only when you explain a rule or the learner asks why: brief_rule = the rule in one or two short sentences, example_correct = one correct example, example_wrong = one typical wrong example. Otherwise leave its fields empty.
                 - Only correct what you are sure about. Do not invent grammar rules.
                 - follow_up_question is exactly one NEW question or task that moves the lesson forward. Never write the same sentence in answer_en and follow_up_question, and never ask a question you have already asked.
+                - End answer_en with . ! or ? only — no comma at the end before follow_up_question. Do not start follow_up_question with a comma.
                 - When Russian is required, translate the whole message the learner will read. answer_ru translates every sentence of answer_en and nothing else. follow_up_ru translates all of follow_up_question and nothing else. Do not skip a sentence and do not add anything that is not in the English. If follow_up_question is empty, follow_up_ru is empty.
                 - Plain text only: no markdown, no asterisks.
                 """.formatted(session.cefr(), session.cefr(), session.cefr().teachingGuidance(),

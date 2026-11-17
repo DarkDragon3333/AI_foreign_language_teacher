@@ -86,6 +86,7 @@ services:
       COMPUTE_TYPE: int8
       DEVICE: cpu
       WHISPER_DOWNLOAD_ROOT: /models
+      STT_LANGUAGE: en
     volumes:
       - whisper_models:/models
     networks:

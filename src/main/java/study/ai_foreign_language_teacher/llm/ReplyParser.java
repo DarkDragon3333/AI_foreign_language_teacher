@@ -49,13 +49,14 @@ public class ReplyParser {
                     : parsed == null && looksLikePlainText(raw) ? raw.strip() : FALLBACK_TEXT;
             return new TeacherReply(text, null, null, null, null, List.of(), mode.json(), cefr.name(), supportLevel);
         }
-        String replyEn = parsed.replyEn().strip();
+        String replyEn = trimTeacherClause(parsed.replyEn().strip());
+        String nextPrompt = trimFollowUp(clean(parsed.nextPrompt()));
         return new TeacherReply(
                 replyEn,
                 clean(parsed.replyRu()),
                 normalize(parsed.correction()),
                 normalize(parsed.explanation()),
-                dedupeQuestion(replyEn, clean(parsed.nextPrompt())),
+                dedupeQuestion(replyEn, nextPrompt),
                 parsed.cardsToReview() == null ? List.of()
                         : parsed.cardsToReview().stream().filter(s -> !blank(s)).map(String::strip).distinct().limit(5).toList(),
                 mode.json(),
@@ -176,6 +177,27 @@ public class ReplyParser {
 
     private static boolean looksLikePlainText(String raw) {
         return !blank(raw) && raw.indexOf('{') < 0 && raw.length() < 2000;
+    }
+
+    /** Убирает запятую после точки в конце ответа: «playing.,» → «playing.» */
+    static String trimTeacherClause(String s) {
+        if (blank(s)) {
+            return s;
+        }
+        String out = s.strip().replaceAll("[,\\s]+$", "");
+        if (out.endsWith(".,")) {
+            out = out.substring(0, out.length() - 1);
+        }
+        return out.strip();
+    }
+
+    /** Убирает запятую в начале follow-up: «, Do you…» → «Do you…» */
+    static String trimFollowUp(String s) {
+        if (blank(s)) {
+            return null;
+        }
+        String out = s.strip().replaceFirst("^[,\\s]+", "");
+        return out.isEmpty() ? null : out;
     }
 
     private static String clean(String s) {

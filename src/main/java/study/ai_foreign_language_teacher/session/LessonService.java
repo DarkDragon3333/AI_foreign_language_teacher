@@ -24,10 +24,12 @@ import study.ai_foreign_language_teacher.memory.SessionRepository;
 import study.ai_foreign_language_teacher.memory.rules.ReviewService;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
+import study.ai_foreign_language_teacher.speech.SttPromptBuilder;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -88,6 +90,18 @@ public class LessonService {
     public List<ChatMessage> history(long sessionId) {
         getSession(sessionId);
         return messages.all(sessionId);
+    }
+
+    /** Контекст для Whisper: тема, имена из чата (в т.ч. Vasia). */
+    public SpeechContext speechContext(long sessionId) {
+        LessonSession session = getSession(sessionId);
+        List<ChatMessage> recent = messages.lastN(sessionId, props.lesson().historyMessages());
+        return new SpeechContext(
+                SttPromptBuilder.forLesson(recent, session.topic()),
+                SttPromptBuilder.namesFrom(recent));
+    }
+
+    public record SpeechContext(String prompt, Set<String> names) {
     }
 
     public LessonSession endSession(long id) {

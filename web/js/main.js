@@ -1,6 +1,7 @@
-import { api, chatTurn, transcribe } from './api.js?v=13';
-import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=13';
-import { openReview, refreshReviewCount } from './review.js?v=13';
+import { api, chatTurn, transcribe } from './api.js?v=14';
+import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=14';
+import { openReview, refreshReviewCount } from './review.js?v=14';
+import { VoiceDuplex } from './voice.js?v=15';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const MODE_NAMES = { conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка' };
@@ -9,7 +10,7 @@ const HINT_STEPS = ['· правило', '· пример', '· ответ', '·
 const C_LEVEL_NOTE = 'На уровнях C1–C2 стиль небольшой локальной модели упрощён: нюансы и идиомы она передаёт хуже живого преподавателя.';
 
 const $ = (id) => document.getElementById(id);
-const state = { session: null, level: 'B1', busy: false, tab: 'lesson' };
+const state = { session: null, level: 'B1', busy: false, tab: 'lesson', voiceDuplex: null, voicePlaceholder: null };
 
 // ---------- тема оформления ----------
 
@@ -56,6 +57,7 @@ function renderLevelPicker() {
 
 function showStart() {
   state.session = null;
+  disableVoiceDuplex(false);
   renderLevelPicker();
   showTab(state.tab);
 }
@@ -149,6 +151,7 @@ function showLesson(session, messages) {
     list.append(m.role === 'user' ? userMessage(m.text) : teacherMessage(m.reply, m.text));
   }
   applySession(session);
+  syncVoiceControls();
   scrollDown();
   $('input').focus();
 }
@@ -167,8 +170,95 @@ function applySession(session) {
 function setBusy(busy) {
   state.busy = busy;
   for (const id of ['send', 'hint', 'end', 'talk']) $(id).disabled = busy;
+  syncVoiceControls();
   if (state.session) applySession(state.session);
 }
+
+function syncVoiceControls() {
+  const on = !!$('voice-duplex').checked && !!state.session;
+  $('voice-mode-wrap').hidden = !on;
+  $('voice-phase').hidden = !on;
+  const ptt = on && $('voice-mode').value === 'ptt';
+  $('talk').disabled = state.busy || (on && !ptt);
+  $('talk').title = on && !ptt
+    ? 'В режиме «без кнопки» просто говорите — конец фразы по паузе'
+    : 'Нажмите и говорите. Удерживайте кнопку или нажмите ещё раз, чтобы отправить';
+}
+
+async function enableVoiceDuplex() {
+  if (!state.session || state.voiceDuplex) return;
+  stopSpeaking();
+  const duplex = new VoiceDuplex();
+  const list = $('messages');
+  try {
+    await duplex.connect(state.session.id, {
+      onPhase: () => {
+        $('voice-phase').textContent = duplex.phaseLabel();
+        syncVoiceControls();
+      },
+      onTranscript: (text) => {
+        list.append(userMessage(text));
+        state.voicePlaceholder = teacherPlaceholder();
+        list.append(state.voicePlaceholder.node);
+        scrollDown();
+      },
+      onDelta: (chunk) => {
+        state.voicePlaceholder?.append(chunk);
+        scrollDown();
+      },
+      onFinal: (payload) => {
+        if (!state.voicePlaceholder) {
+          state.voicePlaceholder = teacherPlaceholder();
+          list.append(state.voicePlaceholder.node);
+        }
+        state.voicePlaceholder.finish(payload.teacher.reply, payload.teacher.text);
+        applySession(payload.session);
+        state.voicePlaceholder = null;
+        scrollDown();
+        refreshReviewCount();
+      },
+      onError: (message) => setStatus(message, true),
+      onClose: () => {
+        if (state.voiceDuplex === duplex) {
+          state.voiceDuplex = null;
+          $('voice-duplex').checked = false;
+          syncVoiceControls();
+        }
+      },
+    }, $('voice-mode').value);
+    state.voiceDuplex = duplex;
+    $('voice-phase').textContent = duplex.phaseLabel();
+    syncVoiceControls();
+    setStatus('');
+  } catch (e) {
+    $('voice-duplex').checked = false;
+    syncVoiceControls();
+    setStatus(e.message || 'Не удалось включить голосовой режим', true);
+  }
+}
+
+function disableVoiceDuplex(clearCheckbox = true) {
+  if (state.voiceDuplex) {
+    state.voiceDuplex.disconnect();
+    state.voiceDuplex = null;
+  }
+  state.voicePlaceholder = null;
+  if (clearCheckbox) $('voice-duplex').checked = false;
+  $('voice-phase').hidden = true;
+  $('voice-mode-wrap').hidden = true;
+  syncVoiceControls();
+}
+
+$('voice-duplex').addEventListener('change', () => {
+  if ($('voice-duplex').checked) enableVoiceDuplex();
+  else disableVoiceDuplex(false);
+});
+$('voice-mode').addEventListener('change', () => {
+  if ($('voice-duplex').checked) {
+    disableVoiceDuplex(false);
+    enableVoiceDuplex();
+  }
+});
 
 function setStatus(text, isError, canRetry) {
   const node = $('status');
@@ -232,7 +322,7 @@ function stopTalk() {
     }
     setStatus('Распознаю…');
     try {
-      const text = await transcribe(blob);
+      const text = await transcribe(blob, state.session?.id);
       setStatus('');
       turn(text, false, true);
     } catch (e) {
@@ -248,6 +338,13 @@ const talkButton = $('talk');
 talkButton.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || state.busy) return;
   event.preventDefault();
+  if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt') {
+    stopSpeaking();
+    state.voiceDuplex.pttDown();
+    setTalking(true);
+    setStatus('Слушаю… отпустите кнопку');
+    return;
+  }
   if (talk.recorder) {
     stopTalk();
     return;
@@ -256,6 +353,12 @@ talkButton.addEventListener('pointerdown', (event) => {
   startTalk();
 });
 talkButton.addEventListener('pointerup', () => {
+  if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt' && talk.recorder == null) {
+    state.voiceDuplex.pttUp();
+    setTalking(false);
+    setStatus('');
+    return;
+  }
   if (talk.recorder && Date.now() - talk.startedAt > 400) stopTalk();
 });
 talkButton.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -365,6 +468,7 @@ $('harder').addEventListener('click', () => shiftLevel(1));
 $('end').addEventListener('click', async () => {
   if (state.busy) return;
   try {
+    disableVoiceDuplex();
     await api.endSession(state.session.id);
     setStatus('');
     showStart();
