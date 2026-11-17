@@ -1,4 +1,4 @@
-import { api, downloadAnki } from './api.js?v=15';
+import { api, downloadAnki } from './api.js?v=16';
 
 const $ = (id) => document.getElementById(id);
 
@@ -8,13 +8,15 @@ let revealed = false;
 let busy = false;
 
 export async function refreshReviewCount() {
-  const badge = $('review-count');
+  const badges = [$('review-count'), $('review-count-progress')].filter(Boolean);
   try {
     const data = await api.review();
-    badge.hidden = data.due < 1;
-    badge.textContent = String(data.due);
+    for (const badge of badges) {
+      badge.hidden = data.due < 1;
+      badge.textContent = data.due + ' due';
+    }
   } catch {
-    badge.hidden = true;
+    for (const badge of badges) badge.hidden = true;
   }
 }
 
@@ -45,8 +47,8 @@ function showCurrent() {
   revealed = false;
   $('review-title').textContent = card.titleRu || card.title;
   $('review-cefr').textContent = card.cefr;
-  $('review-left').textContent = (index + 1) + ' из ' + queue.length;
-  $('review-prompt').textContent = 'Как сказать правильно?';
+  $('review-left').textContent = (index + 1) + ' of ' + queue.length;
+  $('review-prompt').textContent = 'How would you say this?';
   $('review-front').textContent = '✗ ' + card.exampleBad;
   $('review-rule').textContent = card.ruleRu;
   $('review-ok').textContent = '✓ ' + card.exampleOk;
@@ -79,8 +81,8 @@ async function answer(rating) {
     status.hidden = false;
     status.classList.remove('error');
     status.textContent = result.intervalDays > 0
-      ? 'Следующий раз: ' + when(result.intervalDays)
-      : 'Снова сегодня, чуть позже';
+      ? 'Next review: ' + when(result.intervalDays)
+      : 'Again later today';
     queue.splice(index, 1);
     if (index >= queue.length) index = 0;
     showCurrent();
@@ -96,9 +98,6 @@ async function answer(rating) {
 $('export-anki-fsrs').addEventListener('click', () => downloadAnki('fsrs'));
 
 function when(days) {
-  if (days === 1) return 'завтра';
-  const n = days % 10;
-  const teen = days % 100;
-  const word = n === 1 && teen !== 11 ? 'день' : n >= 2 && n <= 4 && (teen < 12 || teen > 14) ? 'дня' : 'дней';
-  return 'через ' + days + ' ' + word;
+  if (days === 1) return 'tomorrow';
+  return 'in ' + days + ' days';
 }

@@ -1,28 +1,60 @@
-import { api, chatTurn, transcribe } from './api.js?v=15';
-import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=14';
-import { openReview, refreshReviewCount } from './review.js?v=15';
-import { VoiceDuplex } from './voice.js?v=15';
+import { api, chatTurn, transcribe } from './api.js?v=16';
+import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=16';
+import { openReview, refreshReviewCount } from './review.js?v=16';
+import { VoiceDuplex } from './voice.js?v=16';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-const MODE_NAMES = {
-  conversation: 'Разговор', explain: 'Объяснение', correct: 'Проверка', drill: 'Тренировка', roleplay: 'Ролевая игра',
+const LEVELS_INFO = {
+  A1: { name: 'Beginner', blurb: 'Introduce yourself & use everyday words' },
+  A2: { name: 'Elementary', blurb: 'Talk about routines & familiar topics' },
+  B1: { name: 'Intermediate', blurb: 'Share experiences & express opinions' },
+  B2: { name: 'Upper intermediate', blurb: 'Discuss ideas with greater confidence' },
+  C1: { name: 'Advanced', blurb: 'Communicate fluently & precisely' },
+  C2: { name: 'Proficient', blurb: 'Handle nuance, register and complex ideas' },
 };
-// что даст следующее нажатие «Подсказка»: ступени support_level 1..3
-const HINT_STEPS = ['· правило', '· пример', '· ответ', '· ответ'];
-const C_LEVEL_NOTE = 'На уровнях C1–C2 стиль небольшой локальной модели упрощён: нюансы и идиомы она передаёт хуже живого преподавателя.';
+const MODE_NAMES = {
+  conversation: 'Conversation', explain: 'Explain', correct: 'Check', drill: 'Drill', roleplay: 'Role-play',
+};
+const MODE_HEADINGS = {
+  conversation: 'Start a conversation',
+  explain: 'Explain a rule',
+  correct: 'Check my English',
+  drill: 'A short drill',
+  roleplay: 'Play a scene',
+};
+const HINT_STEPS = ['· rule', '· example', '· answer', '· answer'];
+const C_LEVEL_NOTE = 'At C1 and C2 this small local model writes more simply than a human teacher. Nuance and idioms are weaker.';
+const PRACTICE_STEPS = 6;
+const GOAL_MIN = 10;
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  session: null, level: 'B1', busy: false, tab: 'lesson', voiceDuplex: null, voicePlaceholder: null,
-  scenarios: [], scenarioProgress: null,
+  session: null,
+  history: [],
+  level: 'A1',
+  busy: false,
+  tab: 'learn',
+  voiceDuplex: null,
+  voicePlaceholder: null,
+  scenarios: [],
+  scenarioProgress: null,
+  starting: false,
+};
+
+const CRUMBS = {
+  learn: ['Learn', 'Overview'],
+  levels: ['Learn', 'Levels'],
+  journal: ['Learn', 'Progress'],
+  review: ['Learn', 'Practice'],
+  lesson: ['Learn', 'Practice'],
 };
 
 // ---------- тема оформления ----------
 
-$('theme').value = document.documentElement.dataset.theme || 'blue';
+$('theme').value = document.documentElement.dataset.theme === 'dusk' ? 'dusk' : 'sage';
 $('theme').addEventListener('change', (event) => {
   document.documentElement.dataset.theme = event.target.value;
-  try { localStorage.setItem('tutor-theme', event.target.value); } catch { /* приватный режим: тема до перезагрузки */ }
+  try { localStorage.setItem('tutor-theme', event.target.value); } catch { /* приватный режим */ }
 });
 
 // ---------- состояние сервисов ----------
@@ -33,47 +65,176 @@ async function refreshHealth() {
     const h = await api.health();
     const down = Object.entries(h.components || {}).filter(([, c]) => c.status !== 'up');
     node.className = 'health ' + (h.status === 'up' ? 'up' : 'down');
-    node.textContent = h.status === 'up' ? 'учитель на связи'
-      : down.map(([name, c]) => `${name}: ${c.detail || 'недоступен'}`).join('; ');
+    node.textContent = h.status === 'up' ? '' : down.map(([name, c]) => `${name}: ${c.detail || 'down'}`).join('; ');
+    node.title = h.status === 'up' ? 'Teacher is ready' : node.textContent;
   } catch {
     node.className = 'health down';
-    node.textContent = 'сервер недоступен';
+    node.textContent = 'Server is offline';
+    node.title = node.textContent;
   }
 }
 
-// ---------- экран «Новый урок» ----------
+// ---------- дневная цель ----------
 
-function renderLevelPicker() {
-  const picker = $('level-picker');
-  picker.textContent = '';
-  for (const level of LEVELS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = level;
-    button.setAttribute('role', 'radio');
-    button.setAttribute('aria-checked', String(level === state.level));
-    button.addEventListener('click', () => { state.level = level; renderLevelPicker(); });
-    picker.append(button);
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+}
+
+function readPractice() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('tutor-practice') || '{}');
+    if (raw.date !== todayKey()) return 0;
+    return Number(raw.ms) || 0;
+  } catch {
+    return 0;
   }
+}
+
+function addPractice(ms) {
+  if (ms <= 0) return readPractice();
+  const next = readPractice() + ms;
+  try { localStorage.setItem('tutor-practice', JSON.stringify({ date: todayKey(), ms: next })); } catch { /* приватный режим */ }
+  return next;
+}
+
+let practiceMark = Date.now();
+function flushPractice() {
+  const now = Date.now();
+  if (state.tab === 'lesson' && document.visibilityState === 'visible') addPractice(now - practiceMark);
+  practiceMark = now;
+}
+
+function renderGoal() {
+  const ms = readPractice();
+  const mins = Math.min(GOAL_MIN, Math.floor(ms / 60000));
+  $('goal-value').textContent = String(mins);
+  $('goal-fill').style.width = Math.min(100, (ms / (GOAL_MIN * 60000)) * 100) + '%';
+  $('goal-caption').textContent = mins + ' of ' + GOAL_MIN + ' minutes complete';
+  $('goal-fill').parentElement.setAttribute('aria-valuenow', String(mins));
+}
+
+// ---------- уровни и обзор ----------
+
+function displayedLevel() {
+  return state.session?.cefr || state.level;
+}
+
+function markCurrentLevel() {
+  const current = displayedLevel();
+  for (const card of document.querySelectorAll('#level-grid [data-level]')) {
+    const on = card.dataset.level === current;
+    card.classList.toggle('is-current', on);
+    const action = card.querySelector('.level-action');
+    if (action) action.textContent = on ? 'Continue learning' : 'Explore level';
+  }
+  for (const chip of document.querySelectorAll('#path-chips [data-level]')) {
+    chip.classList.toggle('is-current', chip.dataset.level === current);
+  }
+  const info = LEVELS_INFO[current] || LEVELS_INFO.A1;
+  $('side-level').textContent = current + ' · ' + info.name;
   const note = $('level-note');
-  note.hidden = !state.level.startsWith('C');
+  note.hidden = !String(current).startsWith('C');
   note.textContent = C_LEVEL_NOTE;
 }
 
-function showStart() {
-  state.session = null;
-  state.scenarioProgress = null;
-  $('scenario-panel').hidden = true;
-  disableVoiceDuplex(false);
-  renderLevelPicker();
-  syncStartForm();
-  showTab(state.tab);
+function heroTitle(session) {
+  const mode = session ? session.mode : $('mode').value;
+  if (mode === 'roleplay') {
+    const slug = session ? session.topic : $('scenario').value;
+    return state.scenarios.find((s) => s.slug === slug)?.title || MODE_HEADINGS.roleplay;
+  }
+  return MODE_HEADINGS[mode] || 'Start a conversation';
+}
+
+function heroSub(session) {
+  const level = session ? session.cefr : state.level;
+  const info = LEVELS_INFO[level] || LEVELS_INFO.A1;
+  if (session?.mode === 'roleplay' || (!session && $('mode').value === 'roleplay')) {
+    const slug = session ? session.topic : $('scenario').value;
+    const scene = state.scenarios.find((s) => s.slug === slug);
+    return scene ? scene.titleRu : (level + ' · ' + info.name);
+  }
+  const topic = session ? session.topic : $('topic').value.trim();
+  return topic || (level + ' · ' + (session ? info.name : info.blurb));
+}
+
+function renderHeroCopy() {
+  $('continue-title').textContent = heroTitle(state.session);
+  $('continue-sub').textContent = heroSub(state.session);
+}
+
+function userTurnCount() {
+  const inDom = document.querySelectorAll('#messages .msg.user').length;
+  const inHistory = (state.history || []).filter((m) => m.role === 'user').length;
+  return Math.max(inDom, inHistory);
+}
+
+function progressCounts() {
+  if (state.session?.mode === 'roleplay' && state.scenarioProgress?.total) {
+    return { done: state.scenarioProgress.done, total: state.scenarioProgress.total };
+  }
+  const turns = state.session ? userTurnCount() : 0;
+  return { done: Math.min(turns, PRACTICE_STEPS), total: PRACTICE_STEPS };
+}
+
+function progressLabel(counts) {
+  if (state.session?.mode === 'roleplay' && state.scenarioProgress) {
+    return counts.done + ' of ' + counts.total + ' goals';
+  }
+  return 'Lesson ' + counts.done + ' of ' + counts.total;
+}
+
+function paintBar(fill, label, counts, bar) {
+  if (!fill) return;
+  const pct = counts.total ? Math.min(100, (counts.done / counts.total) * 100) : 0;
+  fill.style.width = pct + '%';
+  if (label) label.textContent = counts.done + ' / ' + counts.total;
+  if (bar) {
+    bar.setAttribute('aria-valuenow', String(counts.done));
+    bar.setAttribute('aria-valuemax', String(counts.total));
+  }
+}
+
+function updateLessonProgress() {
+  const counts = progressCounts();
+  paintBar($('lesson-bar'), $('lesson-fraction'), counts, $('lesson-bar-wrap'));
+  if (state.tab === 'learn') {
+    $('continue-meta').textContent = state.session ? progressLabel(counts) : '';
+    if (state.session) paintBar($('continue-bar'), null, counts, $('continue-bar-wrap'));
+  }
+}
+
+function renderDashboard() {
+  markCurrentLevel();
+  renderHeroCopy();
+  renderGoal();
+  syncModePills();
+  const open = !!state.session;
+  $('start-form').hidden = open;
+  $('resume-lesson').hidden = !open;
+  $('continue-bar-wrap').hidden = !open;
+  $('continue-meta').hidden = !open;
+  if (open) {
+    const counts = progressCounts();
+    $('continue-meta').textContent = progressLabel(counts);
+    paintBar($('continue-bar'), null, counts, $('continue-bar-wrap'));
+  }
+}
+
+function syncModePills() {
+  const mode = $('mode').value;
+  for (const button of $('mode-pills').querySelectorAll('[data-mode]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+  }
 }
 
 function syncStartForm() {
   const roleplay = $('mode').value === 'roleplay';
   $('scenario-wrap').hidden = !roleplay;
   $('topic-wrap').hidden = roleplay;
+  syncModePills();
+  if (!state.session) renderHeroCopy();
 }
 
 async function loadScenarios() {
@@ -85,7 +246,7 @@ async function loadScenarios() {
     for (const s of state.scenarios) {
       const option = document.createElement('option');
       option.value = s.slug;
-      option.textContent = `${s.titleRu} (${s.cefrMin}–${s.cefrMax})`;
+      option.textContent = s.title + ' · ' + s.titleRu + ' (' + s.cefrMin + '–' + s.cefrMax + ')';
       select.append(option);
     }
   } catch {
@@ -93,23 +254,174 @@ async function loadScenarios() {
   }
 }
 
-$('mode').addEventListener('change', syncStartForm);
+// ---------- разделы ----------
 
-// ---------- разделы: урок / журнал ошибок ----------
+function updateChrome() {
+  const [a, b] = CRUMBS[state.tab] || CRUMBS.learn;
+  $('crumb-a').textContent = a;
+  $('crumb-b').textContent = b;
+  const inLesson = state.tab === 'lesson';
+  $('exit-lesson').hidden = !inLesson;
+  $('range-label').hidden = inLesson;
+  document.title = b + ' · English learning';
+  const nav = state.tab === 'journal' ? 'journal' : state.tab === 'levels' ? 'levels' : 'learn';
+  for (const name of ['learn', 'levels', 'journal']) {
+    const button = $('nav-' + name);
+    if (name === nav) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+}
 
 function showTab(tab) {
+  flushPractice();
+  if (state.tab === 'lesson' && tab !== 'lesson') disableVoiceDuplex();
   state.tab = tab;
-  for (const name of ['lesson', 'review', 'journal']) {
-    const button = $('tab-' + name);
-    if (name === tab) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+  for (const id of ['learn', 'levels', 'journal', 'review', 'lesson']) {
+    $(id).hidden = id !== tab;
   }
-  $('journal').hidden = tab !== 'journal';
-  $('review').hidden = tab !== 'review';
-  $('start').hidden = tab !== 'lesson' || !!state.session;
-  $('lesson').hidden = tab !== 'lesson' || !state.session;
+  updateChrome();
   if (tab === 'journal') loadJournal();
   if (tab === 'review') openReview();
+  if (tab === 'learn') renderDashboard();
+  if (tab === 'levels') markCurrentLevel();
+  if (tab === 'lesson') {
+    updateLessonProgress();
+    $('input').focus();
+  }
 }
+
+function showStart() {
+  state.session = null;
+  state.history = [];
+  state.scenarioProgress = null;
+  $('messages').textContent = '';
+  $('scenario-panel').hidden = true;
+  disableVoiceDuplex(false);
+  syncStartForm();
+  showTab('learn');
+}
+
+async function selectLevel(level) {
+  if (level === displayedLevel()) return;
+  const previous = displayedLevel();
+  state.level = level;
+  try {
+    await api.updateProfile({ cefr: level });
+    if (state.session) {
+      state.session = await api.setLevel(state.session.id, level);
+      if ($('messages').childElementCount) {
+        applySession(state.session);
+        const note = document.createElement('div');
+        note.className = 'chat-note';
+        note.textContent = 'Level ' + previous + ' → ' + level;
+        $('messages').append(note);
+      }
+    }
+    markCurrentLevel();
+    renderHeroCopy();
+  } catch (e) {
+    fatal(e.message);
+  }
+}
+
+async function beginLesson(opts = {}) {
+  if (state.starting) return;
+  if (state.session) {
+    if (opts.cefr && opts.cefr !== state.session.cefr) {
+      state.session = await api.setLevel(state.session.id, opts.cefr);
+      state.level = opts.cefr;
+      markCurrentLevel();
+    }
+    resumeLesson();
+    return;
+  }
+  state.starting = true;
+  const level = opts.cefr || state.level;
+  const mode = opts.mode || $('mode').value;
+  const topic = opts.topic !== undefined
+    ? opts.topic
+    : (mode === 'roleplay' ? $('scenario').value : $('topic').value.trim());
+  try {
+    await api.updateProfile({ cefr: level });
+    state.level = level;
+    const session = await api.startSession({ cefr: level, topic, mode });
+    state.history = [];
+    state.scenarioProgress = null;
+    showLesson(session, []);
+    await turn('', false);
+  } finally {
+    state.starting = false;
+  }
+}
+
+function resumeLesson() {
+  if (!state.session) return;
+  if ($('messages').childElementCount) {
+    showTab('lesson');
+    applySession(state.session);
+    if (state.session.mode === 'roleplay') refreshScenarioPanel();
+    return;
+  }
+  showLesson(state.session, state.history || []);
+  if (!(state.history || []).length) turn('', false);
+}
+
+$('nav-learn').addEventListener('click', () => showTab('learn'));
+$('nav-levels').addEventListener('click', () => showTab('levels'));
+$('nav-journal').addEventListener('click', () => showTab('journal'));
+$('side-level-card').addEventListener('click', () => showTab('levels'));
+$('explore-levels').addEventListener('click', () => showTab('levels'));
+$('open-review').addEventListener('click', () => showTab('review'));
+$('open-review-progress').addEventListener('click', () => showTab('review'));
+$('exit-lesson').addEventListener('click', () => showTab('learn'));
+$('resume-lesson').addEventListener('click', () => resumeLesson());
+
+$('mode-pills').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-mode]');
+  if (!button) return;
+  $('mode').value = button.dataset.mode;
+  $('mode').dispatchEvent(new Event('change'));
+});
+$('mode').addEventListener('change', syncStartForm);
+$('topic').addEventListener('input', () => { if (!state.session) renderHeroCopy(); });
+$('scenario').addEventListener('change', () => { if (!state.session) renderHeroCopy(); });
+
+$('level-grid').addEventListener('click', (event) => {
+  const button = event.target.closest('.level-action');
+  if (!button) return;
+  const level = button.closest('[data-level]').dataset.level;
+  if (level === displayedLevel()) {
+    beginLesson({ cefr: level, mode: 'conversation', topic: '' }).catch((e) => fatal(e.message));
+  } else {
+    selectLevel(level);
+  }
+});
+$('path-chips').addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-level]');
+  if (!chip) return;
+  selectLevel(chip.dataset.level);
+  showTab('levels');
+});
+$('level-check').addEventListener('click', () => {
+  beginLesson({ mode: 'conversation', topic: 'level check' }).catch((e) => fatal(e.message));
+});
+$('open-listen').addEventListener('click', () => {
+  const topic = $('topic').value.trim() || 'everyday English';
+  beginLesson({ mode: 'conversation', topic }).catch((e) => fatal(e.message));
+});
+
+$('start-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    await beginLesson();
+  } catch (e) {
+    fatal(e.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 async function loadJournal() {
   const rows = $('journal-rows');
@@ -139,57 +451,33 @@ async function loadJournal() {
       count.className = 'num';
       count.textContent = e.count;
       const seen = document.createElement('td');
-      seen.textContent = new Date(e.lastSeen).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+      seen.textContent = new Date(e.lastSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       tr.append(rule, example, count, seen);
       rows.append(tr);
     }
   } catch (e) {
     $('journal-table').hidden = true;
     $('journal-empty').hidden = false;
-    $('journal-empty').textContent = 'Не удалось загрузить журнал: ' + e.message;
+    $('journal-empty').textContent = 'Could not load progress: ' + e.message;
   }
 }
-
-$('tab-lesson').addEventListener('click', () => showTab('lesson'));
-$('tab-review').addEventListener('click', () => showTab('review'));
-$('tab-journal').addEventListener('click', () => showTab('journal'));
-
-$('start-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const button = event.submitter;
-  button.disabled = true;
-  try {
-    // выбранный уровень запоминаем в профиле — он станет уровнем по умолчанию
-    await api.updateProfile({ cefr: state.level });
-    const mode = $('mode').value;
-    const topic = mode === 'roleplay' ? $('scenario').value : $('topic').value;
-    const session = await api.startSession({ cefr: state.level, topic, mode });
-    showLesson(session, []);
-    await turn('', false); // учитель начинает урок сам
-  } catch (e) {
-    showStart();
-    fatal(e.message);
-  } finally {
-    button.disabled = false;
-  }
-});
 
 // ---------- экран урока ----------
 
 function showLesson(session, messages) {
   $('fatal').hidden = true;
   state.session = session;
-  showTab('lesson');
+  state.history = messages || [];
   const list = $('messages');
   list.textContent = '';
-  for (const m of messages) {
+  for (const m of state.history) {
     list.append(m.role === 'user' ? userMessage(m.text) : teacherMessage(m.reply, m.text));
   }
+  showTab('lesson');
   applySession(session);
   if (session.mode === 'roleplay') refreshScenarioPanel();
   syncVoiceControls();
   scrollDown();
-  $('input').focus();
 }
 
 function renderScenarioProgress(progress) {
@@ -199,7 +487,7 @@ function renderScenarioProgress(progress) {
   }
   state.scenarioProgress = progress;
   $('scenario-panel').hidden = false;
-  $('scenario-title').textContent = progress.titleRu + ' — цели ' + progress.done + '/' + progress.total;
+  $('scenario-title').textContent = progress.titleRu + ' — ' + progress.done + '/' + progress.total;
   const list = $('scenario-goals');
   list.textContent = '';
   for (const g of progress.goals) {
@@ -208,6 +496,8 @@ function renderScenarioProgress(progress) {
     li.textContent = (g.done ? '✓ ' : '○ ') + g.textRu;
     list.append(li);
   }
+  updateLessonProgress();
+  if (state.tab === 'learn') renderDashboard();
 }
 
 async function refreshScenarioPanel() {
@@ -230,10 +520,20 @@ function applySession(session) {
     ? (state.scenarios.find((s) => s.slug === session.topic)?.titleRu || session.topic)
     : (session.topic || '');
   $('lesson-topic').textContent = topicLabel;
+  $('lesson-kicker').textContent = session.cefr + ' · ' + (MODE_NAMES[session.mode] || session.mode);
+  $('lesson-heading').textContent = heroTitle(session);
+  $('lesson-lede').textContent = session.mode === 'roleplay'
+    ? 'Stay in the scene. A goal ticks off when your line includes the cue.'
+    : 'Write the next line in English, or press Speak.';
   $('hint-level').textContent = HINT_STEPS[Math.min(session.supportLevel, 3)];
   const index = LEVELS.indexOf(session.cefr);
   $('easier').disabled = state.busy || index <= 0;
   $('harder').disabled = state.busy || index >= LEVELS.length - 1;
+  if (LEVELS_INFO[session.cefr]) {
+    state.level = session.cefr;
+    markCurrentLevel();
+  }
+  updateLessonProgress();
 }
 
 function setBusy(busy) {
@@ -250,8 +550,8 @@ function syncVoiceControls() {
   const ptt = on && $('voice-mode').value === 'ptt';
   $('talk').disabled = state.busy || (on && !ptt);
   $('talk').title = on && !ptt
-    ? 'В режиме «без кнопки» просто говорите — конец фразы по паузе'
-    : 'Нажмите и говорите. Удерживайте кнопку или нажмите ещё раз, чтобы отправить';
+    ? 'In hands-free mode just speak — a pause ends the phrase'
+    : 'Tap to speak. Hold the button, or tap again, to send';
 }
 
 async function enableVoiceDuplex() {
@@ -303,7 +603,7 @@ async function enableVoiceDuplex() {
   } catch (e) {
     $('voice-duplex').checked = false;
     syncVoiceControls();
-    setStatus(e.message || 'Не удалось включить голосовой режим', true);
+    setStatus(e.message || 'Could not start voice mode', true);
   }
 }
 
@@ -313,10 +613,10 @@ function disableVoiceDuplex(clearCheckbox = true) {
     state.voiceDuplex = null;
   }
   state.voicePlaceholder = null;
-  if (clearCheckbox) $('voice-duplex').checked = false;
-  $('voice-phase').hidden = true;
-  $('voice-mode-wrap').hidden = true;
-  syncVoiceControls();
+  if (clearCheckbox && $('voice-duplex')) $('voice-duplex').checked = false;
+  if ($('voice-phase')) $('voice-phase').hidden = true;
+  if ($('voice-mode-wrap')) $('voice-mode-wrap').hidden = true;
+  if ($('talk')) syncVoiceControls();
 }
 
 $('voice-duplex').addEventListener('change', () => {
@@ -338,14 +638,12 @@ function setStatus(text, isError, canRetry) {
   node.classList.toggle('error', !!isError);
 }
 
-// «Нажми и скажи»: короткое нажатие включает запись, повторное отправляет.
-// Удержание дольше 0,4 с отправляет фразу в момент отпускания кнопки.
 const talk = { recorder: null, chunks: [], startedAt: 0, stream: null, timer: null, arming: false };
 
 function setTalking(on) {
   const button = $('talk');
   button.setAttribute('aria-pressed', String(on));
-  button.textContent = on ? 'Говорю…' : 'Говорить';
+  button.textContent = on ? 'Speaking…' : 'Speak';
 }
 
 async function startTalk() {
@@ -357,7 +655,7 @@ async function startTalk() {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   } catch {
     talk.arming = false;
-    setStatus('Нет доступа к микрофону', true);
+    setStatus('Microphone is blocked', true);
     return;
   }
   const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
@@ -370,7 +668,7 @@ async function startTalk() {
   recorder.ondataavailable = (event) => { if (event.data.size) talk.chunks.push(event.data); };
   recorder.start();
   setTalking(true);
-  setStatus('Слушаю… отпустите кнопку или нажмите ещё раз');
+  setStatus('Listening… release the button or tap again');
   talk.timer = setTimeout(() => { if (talk.recorder) stopTalk(); }, 30000);
 }
 
@@ -387,10 +685,10 @@ function stopTalk() {
     const blob = new Blob(talk.chunks, { type: recorder.mimeType || 'audio/webm' });
     talk.chunks = [];
     if (Date.now() - startedAt < 400 || blob.size < 800) {
-      setStatus('Слишком короткая запись', true);
+      setStatus('That recording is too short', true);
       return;
     }
-    setStatus('Распознаю…');
+    setStatus('Transcribing…');
     try {
       const text = await transcribe(blob, state.session?.id);
       setStatus('');
@@ -412,7 +710,7 @@ talkButton.addEventListener('pointerdown', (event) => {
     stopSpeaking();
     state.voiceDuplex.pttDown();
     setTalking(true);
-    setStatus('Слушаю… отпустите кнопку');
+    setStatus('Listening… release the button');
     return;
   }
   if (talk.recorder) {
@@ -433,7 +731,6 @@ talkButton.addEventListener('pointerup', () => {
 });
 talkButton.addEventListener('contextmenu', (event) => event.preventDefault());
 
-// первый ход урока не удался (например, модель ещё не скачана) — даём повторить его
 $('retry').addEventListener('click', () => turn('', false));
 
 function scrollDown() {
@@ -444,7 +741,7 @@ function scrollDown() {
 async function turn(text, hint, aloud) {
   if (state.busy || !state.session) return;
   setBusy(true);
-  setStatus('Учитель думает…');
+  setStatus('The teacher is thinking…');
   const list = $('messages');
   const shownUser = text ? userMessage(text) : null;
   if (shownUser) list.append(shownUser);
@@ -462,7 +759,7 @@ async function turn(text, hint, aloud) {
         applySession(payload.session);
         if (payload.scenario) renderScenarioProgress(payload.scenario);
         if (aloud) {
-          speakMessage(placeholder.node).catch(() => setStatus('Нажмите «Слушать», чтобы услышать ответ'));
+          speakMessage(placeholder.node).catch(() => setStatus('Press Listen to hear the reply'));
         }
       },
       error(message) { failure = message; },
@@ -473,13 +770,14 @@ async function turn(text, hint, aloud) {
 
   if (failure) {
     placeholder.remove();
-    if (shownUser) { shownUser.remove(); $('input').value = text; } // не теряем набранный текст
+    if (shownUser) { shownUser.remove(); $('input').value = text; }
     setStatus(failure, true, !text && !hint);
     refreshHealth();
   } else {
     setStatus('');
     if ($('health').classList.contains('down')) refreshHealth();
     refreshReviewCount();
+    updateLessonProgress();
   }
   setBusy(false);
   fitInput();
@@ -495,7 +793,6 @@ $('chat-form').addEventListener('submit', (event) => {
   turn(text, false);
 });
 
-// высота поля подстраивается под текст (до предела из CSS, дальше — прокрутка)
 function fitInput() {
   const input = $('input');
   input.style.height = 'auto';
@@ -522,10 +819,9 @@ async function shiftLevel(delta) {
   try {
     const previous = state.session.cefr;
     applySession(await api.setLevel(state.session.id, next));
-    // отметка прямо в ленте: видно, с какого места учитель говорит по-другому
     const note = document.createElement('div');
     note.className = 'chat-note';
-    note.textContent = `${delta > 0 ? 'Сложнее' : 'Проще'}: уровень ${previous} → ${next}`;
+    note.textContent = (delta > 0 ? 'Harder' : 'Easier') + ': ' + previous + ' → ' + next;
     $('messages').append(note);
     scrollDown();
     setStatus('');
@@ -537,7 +833,7 @@ $('easier').addEventListener('click', () => shiftLevel(-1));
 $('harder').addEventListener('click', () => shiftLevel(1));
 
 $('end').addEventListener('click', async () => {
-  if (state.busy) return;
+  if (state.busy || !state.session) return;
   try {
     disableVoiceDuplex();
     await api.endSession(state.session.id);
@@ -548,8 +844,6 @@ $('end').addEventListener('click', async () => {
   }
 });
 
-// ---------- запуск ----------
-
 function fatal(message) {
   const node = $('fatal');
   node.hidden = false;
@@ -559,22 +853,26 @@ function fatal(message) {
 async function boot() {
   refreshHealth();
   setInterval(refreshHealth, 30000);
+  setInterval(flushPractice, 5000);
+  document.addEventListener('visibilitychange', flushPractice);
+  renderGoal();
   await loadScenarios();
   try {
     const profile = await api.profile();
-    state.level = profile.cefr;
-    // незавершённый урок продолжаем после перезагрузки страницы
+    state.level = LEVELS_INFO[profile.cefr] ? profile.cefr : state.level;
     const open = (await api.sessions()).find((s) => !s.endedAt);
     if (open) {
-      const messages = await api.messages(open.id);
-      showLesson(open, messages);
-      if (!messages.length) turn('', false); // урок был создан, но учитель так и не ответил
-    } else {
-      showStart();
+      state.session = open;
+      state.level = open.cefr || state.level;
+      state.history = await api.messages(open.id);
+      if (open.mode === 'roleplay') {
+        try { state.scenarioProgress = await api.scenarioProgress(open.id); } catch { /* чеклист подгрузится в уроке */ }
+      }
     }
+    showTab('learn');
   } catch (e) {
-    showStart();
-    fatal('Не удалось связаться с сервером: ' + e.message);
+    showTab('learn');
+    fatal('Cannot reach the server: ' + e.message);
   }
   refreshReviewCount();
 }

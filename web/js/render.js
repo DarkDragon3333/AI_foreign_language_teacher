@@ -8,7 +8,7 @@ export function stopSpeaking() {
   if (!current) return;
   current.audio.pause();
   URL.revokeObjectURL(current.url);
-  current.button.textContent = 'Слушать';
+  current.button.textContent = 'Listen';
   current.button.setAttribute('aria-pressed', 'false');
   current = null;
 }
@@ -26,7 +26,7 @@ function play(button) {
   return speak(button.dataset.text).then((url) => {
     const audio = new Audio(url);
     current = { button, audio, url };
-    button.textContent = 'Стоп';
+    button.textContent = 'Stop';
     button.setAttribute('aria-pressed', 'true');
     audio.addEventListener('ended', () => {
       if (current && current.audio === audio) stopSpeaking();
@@ -40,14 +40,14 @@ function play(button) {
     button.dataset.loading = '0';
     button.disabled = false;
     if (!current || current.button !== button) {
-      button.textContent = 'Слушать';
+      button.textContent = 'Listen';
       button.setAttribute('aria-pressed', 'false');
     }
   });
 }
 
 function listenButton(text) {
-  const button = el('button', 'listen', 'Слушать');
+  const button = el('button', 'listen', 'Listen');
   button.type = 'button';
   button.dataset.text = text;
   button.setAttribute('aria-pressed', 'false');
@@ -171,7 +171,7 @@ function fillTeacher(wrap, bubble, reply, fallbackText) {
   const c = reply.correction;
   if (c) {
     const box = el('div', 'extra');
-    box.append(el('div', 'extra-title', 'Исправление'));
+    box.append(el('div', 'extra-title', 'Correction'));
     box.append(fixLine(c));
     if (c.errors && c.errors.length) {
       const list = el('ul', 'errors');
@@ -190,7 +190,7 @@ function fillTeacher(wrap, bubble, reply, fallbackText) {
   const x = reply.explanation;
   if (x && (x.simple || x.example_ok || x.example_bad)) {
     const box = el('div', 'extra');
-    box.append(el('div', 'extra-title', x.title ? 'Правило · ' + x.title : 'Правило'));
+    box.append(el('div', 'extra-title', x.title ? 'Rule · ' + x.title : 'Rule'));
     if (x.simple) box.append(el('div', null, x.simple));
     if (x.example_ok) box.append(el('div', 'example ok', '✓ ' + x.example_ok));
     if (x.example_bad) box.append(el('div', 'example bad', '✗ ' + x.example_bad));
@@ -201,14 +201,14 @@ function fillTeacher(wrap, bubble, reply, fallbackText) {
   // русское пояснение — только по кнопке
   if (reply.reply_ru) {
     const box = el('div', 'extra ru');
-    box.append(el('div', 'extra-title', 'По-русски'), el('div', null, reply.reply_ru));
+    box.append(el('div', 'extra-title', 'In Russian'), el('div', null, reply.reply_ru));
     box.hidden = true;
-    const toggle = el('button', 'translate', 'Перевести');
+    const toggle = el('button', 'translate', 'Translate');
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.addEventListener('click', () => {
       box.hidden = !box.hidden;
-      toggle.textContent = box.hidden ? 'Перевести' : 'Скрыть перевод';
+      toggle.textContent = box.hidden ? 'Translate' : 'Hide translation';
       toggle.setAttribute('aria-expanded', String(!box.hidden));
     });
     wrap.append(toggle, box);

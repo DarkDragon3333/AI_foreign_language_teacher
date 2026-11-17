@@ -3,9 +3,9 @@
 const SAMPLE_RATE = 16000;
 
 const PHASE_LABEL = {
-  listen: 'Слушаю…',
-  think: 'Учитель думает…',
-  speak: 'Говорю…',
+  listen: 'Listening…',
+  think: 'The teacher is thinking…',
+  speak: 'Speaking…',
 };
 
 export class VoiceDuplex {
