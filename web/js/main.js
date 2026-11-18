@@ -2,6 +2,8 @@ import { api, chatTurn, transcribe } from './api.js?v=18';
 import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=18';
 import { openReview, refreshReviewCount } from './review.js?v=18';
 import { VoiceDuplex } from './voice.js?v=18';
+import { stopActivePractice, wirePracticeControls } from './practice.js?v=30';
+import { enterPracticeScreen, focusPracticeTab, pausePracticeScreen } from './practice-ui.js?v=2';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const LEVELS_INFO = {
@@ -56,7 +58,9 @@ const CRUMBS = {
   journal: ['Learn', 'Progress'],
   review: ['Learn', 'Practice'],
   lesson: ['Learn', 'Practice'],
+  grammar: ['Learn', 'Grammar'],
 };
+const PRACTICE_TABS = new Set(['grammar', 'review']);
 
 // ---------- тема оформления ----------
 
@@ -472,7 +476,11 @@ function updateChrome() {
   $('crumb-a').textContent = a;
   $('crumb-b').textContent = b;
   const inLesson = state.tab === 'lesson';
+  const inPractice = PRACTICE_TABS.has(state.tab);
   $('exit-lesson').hidden = !inLesson;
+  $('exit-practice').hidden = !inPractice || inLesson;
+  const stopBtn = $('stop-practice');
+  stopBtn.hidden = !inPractice || inLesson || state.tab === 'review';
   $('range-label').hidden = inLesson;
   document.title = b + ' · English learning';
   const nav = state.tab === 'journal' ? 'journal' : state.tab === 'levels' ? 'levels' : 'learn';
@@ -489,8 +497,9 @@ function showTab(tab) {
     disableVoiceDuplex();
     pauseLessonClock();
   }
+  if (PRACTICE_TABS.has(state.tab) && !PRACTICE_TABS.has(tab)) pausePracticeScreen();
   state.tab = tab;
-  for (const id of ['learn', 'levels', 'journal', 'review', 'lesson']) {
+  for (const id of ['learn', 'levels', 'journal', 'review', 'grammar', 'lesson']) {
     $(id).hidden = id !== tab;
   }
   updateChrome();
@@ -499,7 +508,11 @@ function showTab(tab) {
     loadHistory();
     loadJournal();
   }
-  if (tab === 'review') openReview();
+  if (tab === 'review') {
+    enterPracticeScreen('review');
+    openReview();
+  }
+  if (PRACTICE_TABS.has(tab) && tab !== 'review') focusPracticeTab(tab);
   if (tab === 'learn') renderDashboard();
   if (tab === 'levels') markCurrentLevel();
   if (tab === 'lesson') {
@@ -605,6 +618,11 @@ $('journal-show-all').addEventListener('click', () => {
   loadJournal();
 });
 $('exit-lesson').addEventListener('click', () => showTab('learn'));
+$('exit-practice').addEventListener('click', () => {
+  stopActivePractice(state.tab);
+  showTab('learn');
+});
+$('stop-practice').addEventListener('click', () => stopActivePractice(state.tab));
 $('resume-lesson').addEventListener('click', () => resumeLesson());
 
 $('mode-pills').addEventListener('click', (event) => {
@@ -630,6 +648,7 @@ $('level-grid').addEventListener('click', (event) => {
 $('level-check').addEventListener('click', () => {
   beginLesson({ mode: 'conversation', topic: 'level check' }).catch((e) => fatal(e.message));
 });
+$('open-grammar').addEventListener('click', () => showTab('grammar'));
 
 $('start-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1172,6 +1191,7 @@ async function boot() {
     fatal('Cannot reach the server: ' + e.message);
   }
   refreshReviewCount();
+  wirePracticeControls();
 }
 
 boot();

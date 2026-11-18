@@ -1,4 +1,5 @@
 import { api, downloadAnki } from './api.js?v=16';
+import { setPracticeProgress } from './practice-ui.js?v=1';
 
 const $ = (id) => document.getElementById(id);
 
@@ -48,6 +49,7 @@ function showCurrent() {
   $('review-title').textContent = card.titleRu || card.title;
   $('review-cefr').textContent = card.cefr;
   $('review-left').textContent = (index + 1) + ' of ' + queue.length;
+  setPracticeProgress('review', index, queue.length);
   $('review-prompt').textContent = 'How would you say this?';
   $('review-front').textContent = '✗ ' + card.exampleBad;
   $('review-rule').textContent = card.ruleRu;

@@ -56,6 +56,8 @@
         <p class="crumbs"><span id="crumb-a">Learn</span> <span class="crumb-sep">/</span> <span id="crumb-b">Overview</span></p>
         <div class="topbar-right">
           <span id="range-label" class="range-label">English · A1–C2</span>
+          <button id="exit-practice" type="button" class="exit-lesson" hidden>Exit drill</button>
+          <button id="stop-practice" type="button" class="end-lesson topbar-stop" hidden>End drill</button>
           <button id="exit-lesson" type="button" class="exit-lesson" hidden>Exit lesson</button>
         </div>
       </header>
@@ -133,6 +135,14 @@
                     <span class="practice-copy">
                       <span class="practice-title">Useful words</span>
                       <span class="practice-meta">5 min · Vocabulary <span id="review-count" class="due-count" hidden></span></span>
+                    </span>
+                    <span class="arrow" aria-hidden="true">→</span>
+                  </button>
+                  <button id="open-grammar" type="button" class="practice-card">
+                    <span class="practice-icon" aria-hidden="true">Ab</span>
+                    <span class="practice-copy">
+                      <span class="practice-title">Grammar drills</span>
+                      <span class="practice-meta">6 tasks · Grammar</span>
                     </span>
                     <span class="arrow" aria-hidden="true">→</span>
                   </button>
@@ -351,6 +361,86 @@
                   <button id="review-easy" type="button" class="rate" hidden>Easy</button>
                 </div>
               </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="grammar" class="activity-screen" hidden>
+          <header class="lesson-sticky">
+            <div class="lesson-head-inner">
+              <div class="lesson-head-top">
+                <div class="lesson-head-title"><h1>Grammar drills</h1></div>
+                <dl class="lesson-stats">
+                  <div class="lesson-stat lesson-stat-progress">
+                    <dt>Progress</dt>
+                    <dd class="lesson-stat-body">
+                      <div id="grammar-bar-wrap" class="bar lesson-bar lesson-stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+                        <span id="grammar-bar"></span>
+                      </div>
+                      <span id="grammar-fraction" class="lesson-stat-num">0 / 6</span>
+                    </dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Time</dt>
+                    <dd><span id="grammar-elapsed" class="lesson-stat-num tabular">0:00</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Correct</dt>
+                    <dd><span id="grammar-correct" class="lesson-stat-num stat-good">0</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Mistakes</dt>
+                    <dd><span id="grammar-mistakes" class="lesson-stat-num stat-bad">0</span></dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="lesson-head-main">
+                <div class="lesson-head-copy">
+                  <p class="lesson-lede">Six short tasks. Pick types below, then start a set.</p>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="lesson-main">
+            <div class="lesson-body practice-body">
+              <div id="grammar-launch" class="grammar-launch">
+                <div id="grammar-types" class="grammar-types">
+                  <label><input type="checkbox" value="gap" checked> Gap</label>
+                  <label><input type="checkbox" value="choice" checked> Choice</label>
+                  <label><input type="checkbox" value="rewrite"> Rewrite</label>
+                  <label><input type="checkbox" value="find_error"> Find error</label>
+                  <label><input type="checkbox" id="grammar-random"> Random mix</label>
+                </div>
+                <button id="grammar-start" type="button" class="solid">Start set</button>
+              </div>
+              <div class="grammar-workspace">
+                <div class="grammar-main">
+                  <div class="practice-focus grammar-stack">
+                    <article id="grammar-exercise" class="review-card grammar-card" hidden>
+                      <p id="grammar-meta" class="muted"></p>
+                      <p id="grammar-prompt" class="review-prompt"></p>
+                      <p id="grammar-rule" class="grammar-rule note"></p>
+                      <div id="grammar-choices" class="grammar-choices"></div>
+                      <p id="grammar-status" class="grammar-feedback status" role="status" hidden></p>
+                      <div class="grammar-compose">
+                        <input id="grammar-answer" type="text" maxlength="500" placeholder="Your answer" class="grammar-answer-input">
+                        <button id="grammar-submit" type="button" class="solid">Check</button>
+                      </div>
+                    </article>
+                    <p id="grammar-done" class="grammar-done note" hidden>Finished. Start another set if you like.</p>
+                  </div>
+                </div>
+                <aside id="grammar-trail-wrap" class="grammar-trail-wrap" hidden>
+                  <section class="grammar-trail-col" aria-labelledby="grammar-trail-wrong-h">
+                    <h2 id="grammar-trail-wrong-h" class="grammar-trail-heading">Not quite</h2>
+                    <div id="grammar-trail-wrong" class="grammar-trail-list" role="list"></div>
+                  </section>
+                  <section class="grammar-trail-col" aria-labelledby="grammar-trail-right-h">
+                    <h2 id="grammar-trail-right-h" class="grammar-trail-heading">Correct</h2>
+                    <div id="grammar-trail-right" class="grammar-trail-list" role="list"></div>
+                  </section>
+                </aside>
+              </div>
             </div>
           </div>
         </section>

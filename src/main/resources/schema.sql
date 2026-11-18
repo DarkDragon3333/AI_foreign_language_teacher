@@ -121,3 +121,14 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
     UNIQUE (user_id, slot_date)
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_slots_user ON schedule_slots (user_id, slot_date);
+
+CREATE TABLE IF NOT EXISTS practice_runs (
+    id            BIGSERIAL PRIMARY KEY,
+    user_id       BIGINT      NOT NULL REFERENCES users (id),
+    kind          TEXT        NOT NULL,
+    cefr_snapshot TEXT        NOT NULL,
+    state         JSONB       NOT NULL,
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_practice_runs_user ON practice_runs (user_id, id DESC);

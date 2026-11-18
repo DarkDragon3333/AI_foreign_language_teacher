@@ -156,6 +156,33 @@ public final class Dto {
     public record ErrorView(String error) {
     }
 
+    public record GrammarStartRequest(List<String> types, Boolean random) {
+    }
+
+    public record GrammarStartView(long runId, GrammarExerciseView current) {
+        static GrammarStartView of(study.ai_foreign_language_teacher.practice.GrammarPracticeService.StartResult r) {
+            return new GrammarStartView(r.runId(), GrammarExerciseView.of(r.current()));
+        }
+    }
+
+    public record GrammarExerciseView(int index, int total, String type, String prompt, List<String> choices, String rule) {
+        static GrammarExerciseView of(study.ai_foreign_language_teacher.practice.GrammarPracticeService.ExerciseView v) {
+            if (v == null) {
+                return null;
+            }
+            return new GrammarExerciseView(v.index(), v.total(), v.type(), v.prompt(), v.choices(), v.rule());
+        }
+    }
+
+    public record GrammarAnswerRequest(String answer) {
+    }
+
+    public record GrammarAnswerView(boolean correct, String expected, GrammarExerciseView next, boolean finished) {
+        static GrammarAnswerView of(study.ai_foreign_language_teacher.practice.GrammarPracticeService.AnswerResult r) {
+            return new GrammarAnswerView(r.correct(), r.expected(), GrammarExerciseView.of(r.next()), r.finished());
+        }
+    }
+
     public record ScenarioListItem(String slug, String title, String titleRu, String cefrMin, String cefrMax,
                                    int goals) {
         static ScenarioListItem of(study.ai_foreign_language_teacher.domain.RoleScenario s) {

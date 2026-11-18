@@ -24,6 +24,8 @@ export const api = {
   patchScheduleSlot: (date, patch) => request('PATCH', `/api/schedule/slots?date=${encodeURIComponent(date)}`, patch),
   insights: (limit = 5) => request('GET', `/api/insights?limit=${limit}`),
   revisePlan: () => request('POST', '/api/insights/plan'),
+  grammarStart: (body) => request('POST', '/api/practice/grammar/start', body),
+  grammarAnswer: (runId, answer) => request('POST', `/api/practice/grammar/${runId}/answer`, { answer }),
   sessions: () => request('GET', '/api/sessions'),
   startSession: (params) => request('POST', '/api/sessions', params),
   messages: (sessionId) => request('GET', `/api/sessions/${sessionId}/messages`),
