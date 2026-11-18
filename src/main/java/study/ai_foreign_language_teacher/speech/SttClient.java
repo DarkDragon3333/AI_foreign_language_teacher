@@ -70,13 +70,21 @@ public class SttClient {
                 throw new IllegalArgumentException("Распознавание не ответило: HTTP " + response.statusCode());
             }
             JsonNode text = mapper.readTree(response.body()).path("text");
-            return text.isMissingNode() || text.isNull() ? "" : text.asString("").strip();
+            return text.isMissingNode() || text.isNull() ? "" : withoutDictatedCommas(text.asString(""));
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             log.warn("STT request failed: {}", e.toString());
             throw new IllegalArgumentException("Распознавание речи сейчас недоступно");
         }
+    }
+
+    /** Whisper ставит запятую на паузу. Ученик её не произносил. */
+    static String withoutDictatedCommas(String text) {
+        if (text == null || text.isEmpty()) {
+            return text == null ? "" : text;
+        }
+        return text.replace(",", "").replaceAll("[\\t ]{2,}", " ").strip();
     }
 
     public boolean ready() {

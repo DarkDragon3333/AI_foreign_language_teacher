@@ -109,4 +109,13 @@ class CorrectionPolicyTest {
         assertEquals(1, trusted.size());
         assertEquals("a apple", trusted.get(0).span());
     }
+
+    @Test
+    void theMyKeepsThePossessive() {
+        String text = "I ride at the my city";
+        Correction c = CorrectionPolicy.decide(text, null,
+                List.of(new LtMatch("A_MY", "Collocations", "article + possessive form",
+                        "Did you mean the or my?", text.indexOf("the my"), 6, "the my", List.of("the", "my"))));
+        assertEquals("I ride at my city", c.corrected());
+    }
 }

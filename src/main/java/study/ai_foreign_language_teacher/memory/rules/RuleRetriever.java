@@ -45,9 +45,9 @@ public class RuleRetriever {
 
         StringBuilder blob = new StringBuilder(text);
         for (LtMatch match : grammar) {
-            blob.append(' ').append(nullToEmpty(match.message()))
-                    .append(' ').append(nullToEmpty(match.span()))
-                    .append(' ').append(nullToEmpty(match.title()));
+            // текст правила LanguageTool сюда не кладём: в нём слова вроде possessive,
+            // и к «the my» подтягивается чужая карточка про 's
+            blob.append(' ').append(nullToEmpty(match.span()));
         }
         if (mode == LessonMode.EXPLAIN && topic != null) {
             blob.append(' ').append(topic);
@@ -103,7 +103,8 @@ public class RuleRetriever {
             score += term.contains(" ") ? 12 : Math.min(8, term.length());
         }
         String title = card.title().toLowerCase(Locale.ROOT);
-        if (title.length() >= 6 && containsTerm(hay, title)) {
+        // одно слово в заголовке («during») есть и в правильной фразе «during the week»
+        if (title.contains(" ") && title.length() >= 6 && containsTerm(hay, title)) {
             score += 12;
         }
         return score;

@@ -107,7 +107,7 @@ public class PromptBuilder {
                 - answer_ru and follow_up_ru are Russian. Leave both empty unless the level rules or the support rules ask for Russian.
                 - If the learner asks you something, answer it in answer_en first.
                 - If the learner's last message has a real mistake, fill "correction". First "errors": one item per mistake (fragment = the wrong words copied exactly from the learner's message, rule = short rule name, tip = one short tip). Then "fixed_text": the learner's whole message with only those mistakes fixed. Never shorten, split or rephrase a correct sentence: style is not a mistake. If there is nothing to fix, leave errors empty and fixed_text empty.
-                - Fill "explanation" only when you explain a rule or the learner asks why: brief_rule = the rule in one or two short sentences, example_correct = one correct example, example_wrong = one typical wrong example. Otherwise leave its fields empty.
+                - Fill "explanation" only when you explain a rule or the learner asks why: brief_rule = the rule in one or two short sentences, example_correct = one correct example, example_wrong = the learner's own wrong words, not a new sentence about another person. Otherwise leave its fields empty.
                 - Only correct what you are sure about. Do not invent grammar rules.
                 - follow_up_question is exactly one NEW question or task that moves the lesson forward. Never write the same sentence in answer_en and follow_up_question, and never ask a question you have already asked.
                 - End answer_en with . ! or ? only — no comma at the end before follow_up_question. Do not start follow_up_question with a comma.

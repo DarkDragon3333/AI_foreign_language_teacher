@@ -30,4 +30,16 @@ class StuckDetectorTest {
         assertTrue(StuckDetector.isStuck("не знаю"));
         assertTrue(StuckDetector.isStuck("Sorry, I don't know"));
     }
+
+    @Test
+    void helpMeInsideASentenceIsNotARequest() {
+        // реальный случай: «It's help me tp relax» приняли за просьбу о помощи и не проверили фразу
+        assertFalse(StuckDetector.isStuck(
+                "I also like to ride my bike at the my city or in the forest near my house. It's help me tp relax after work"));
+        assertFalse(StuckDetector.isStuck("Bikes help me relax after work"));
+        assertTrue(StuckDetector.isStuck("help me"));
+        assertTrue(StuckDetector.isStuck("Can you help me?"));
+        assertTrue(StuckDetector.isStuck("please help me with this"));
+        assertTrue(StuckDetector.isStuck("Sorry, help me"));
+    }
 }

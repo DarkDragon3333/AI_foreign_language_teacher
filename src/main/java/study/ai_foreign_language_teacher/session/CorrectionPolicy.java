@@ -119,10 +119,11 @@ public final class CorrectionPolicy {
         List<LtMatch> sorted = lt.stream().sorted(Comparator.comparingInt(LtMatch::offset).reversed()).toList();
         for (LtMatch m : sorted) {
             int end = m.offset() + m.length();
-            if (m.firstReplacement() == null || end > lastStart || end > sb.length()) {
+            String replacement = chooseReplacement(m);
+            if (replacement == null || end > lastStart || end > sb.length()) {
                 continue; // нет замены или находки пересекаются
             }
-            sb.replace(m.offset(), end, m.firstReplacement());
+            sb.replace(m.offset(), end, replacement);
             lastStart = m.offset();
         }
         return sb.toString();
@@ -130,12 +131,35 @@ public final class CorrectionPolicy {
 
     private static String hint(LtMatch m) {
         String message = m.message() == null ? "" : m.message().strip();
-        String replacement = m.firstReplacement();
+        String replacement = chooseReplacement(m);
         if (replacement == null) {
             return message;
         }
         return message.isEmpty() ? "→ " + replacement : message + " → " + replacement;
     }
+
+    /**
+     * Если в куске и артикль, и my/your/his, LanguageTool предлагает оба варианта.
+     * Оставляем притяжательное: «the my city» → «my city», а не «the city».
+     */
+    static String chooseReplacement(LtMatch m) {
+        if (m.replacements() == null || m.replacements().isEmpty()) {
+            return null;
+        }
+        String span = m.span() == null ? "" : m.span().toLowerCase(Locale.ROOT);
+        if (span.matches(".*\\b(a|an|the)\\b.*")) {
+            for (String candidate : m.replacements()) {
+                String word = candidate.toLowerCase(Locale.ROOT).strip();
+                if (POSSESSIVES.contains(word) && containsWords(span, word)) {
+                    return candidate;
+                }
+            }
+        }
+        return m.replacements().get(0);
+    }
+
+    private static final java.util.Set<String> POSSESSIVES = java.util.Set.of(
+            "my", "your", "his", "her", "its", "our", "their");
 
     /** Фрагмент встречается целыми словами: "go" не считается найденным внутри "gone". */
     private static boolean containsWords(String text, String span) {

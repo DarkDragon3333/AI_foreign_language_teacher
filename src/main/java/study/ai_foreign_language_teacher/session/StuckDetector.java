@@ -10,7 +10,7 @@ public final class StuckDetector {
             "не понимаю", "не понял", "не поняла", "непонятно", "помоги", "подскажи", "подсказк",
             "что это значит", "как сказать", "объясни",
             "i don't understand", "i dont understand", "i do not understand", "don't get it",
-            "help me", "give me a hint", "what does it mean");
+            "give me a hint", "what does it mean");
 
     /** «Не знаю» — затруднение, только если это вся реплика: «I don't know what I want to do» — обычный ответ. */
     private static final List<String> WHOLE_MESSAGE = List.of("не знаю", "i don't know", "i dont know", "i do not know", "no idea");
@@ -26,7 +26,18 @@ public final class StuckDetector {
         if (ANYWHERE.stream().anyMatch(t::contains)) {
             return true;
         }
+        if (asksForHelp(t)) {
+            return true;
+        }
         String bare = t.replaceAll("[\\p{Punct}\\s]+$", "").replaceAll("^(sorry|извини|извините)[,\\s]+", "");
         return WHOLE_MESSAGE.contains(bare);
+    }
+
+    /**
+     * «help me» — просьба к учителю, только если это обращение, а не «это помогает мне».
+     * «It's help me to relax» содержит те же слова, но это обычная фраза.
+     */
+    static boolean asksForHelp(String text) {
+        return text.matches("(?s).*(\\A|[.!?,]\\s*|\\bplease\\s+|\\b(?:can|could|would) you\\s+)help me(?!\\p{L}).*");
     }
 }

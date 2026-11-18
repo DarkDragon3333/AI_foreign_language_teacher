@@ -43,6 +43,26 @@ class RuleCardsTest {
     }
 
     @Test
+    void checkerProseDoesNotPullAnUnrelatedCard() {
+        String text = "I also like to ride my bike at the my city";
+        LtMatch match = new LtMatch("A_MY", "Collocations", "article + possessive form",
+                "A determiner cannot be combined with a possessive pronoun.",
+                text.indexOf("the my"), 6, "the my", List.of("the", "my"));
+        List<RuleCard> cards = retriever.retrieve(Cefr.A2, LessonMode.CONVERSATION, null, text, List.of(match), false);
+        assertEquals("article_and_possessive", cards.get(0).slug());
+        assertTrue(cards.stream().noneMatch(c -> c.slug().equals("possessive_s")));
+    }
+
+    @Test
+    void correctDuringDoesNotPullTheDuringCard() {
+        String text = "I like ride my bike during the week. I work out at my gym on the weekend";
+        LtMatch match = new LtMatch("OTHER", "Grammar", "Something else", "Unrelated.",
+                text.indexOf("like"), 4, "like", List.of("to like"));
+        List<RuleCard> cards = retriever.retrieve(Cefr.A2, LessonMode.CONVERSATION, null, text, List.of(match), false);
+        assertTrue(cards.stream().noneMatch(c -> c.slug().equals("during")));
+    }
+
+    @Test
     void russianQuestionFindsHaveBeen() {
         List<RuleCard> cards = retriever.retrieve(Cefr.B1, LessonMode.CONVERSATION, null,
                 "когда писать have been", null, false);

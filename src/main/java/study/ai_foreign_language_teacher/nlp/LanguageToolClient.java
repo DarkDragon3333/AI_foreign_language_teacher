@@ -85,6 +85,10 @@ public class LanguageToolClient implements GrammarChecker {
                 }
             }
             JsonNode rule = m.path("rule");
+            // «три предложения подряд с I» — стиль, не ошибка ученика. Такое правило не показываем.
+            if (!forLearners(rule.path("issueType").asString(""))) {
+                continue;
+            }
             String ruleId = rule.path("id").asString("UNKNOWN");
             boolean spelling = LtMatch.isSpellingRule(ruleId);
             String span = text.substring(offset, offset + length);
@@ -106,6 +110,11 @@ public class LanguageToolClient implements GrammarChecker {
             }
         }
         return matches;
+    }
+
+    /** Стилистические советы («напишите Furthermore») ученику не показываем. */
+    static boolean forLearners(String issueType) {
+        return issueType == null || !issueType.equalsIgnoreCase("style");
     }
 
     /** Русскую реплику («не понимаю») английским правилам отдавать бессмысленно. */

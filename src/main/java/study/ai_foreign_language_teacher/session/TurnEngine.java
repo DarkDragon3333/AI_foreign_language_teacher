@@ -17,6 +17,7 @@ import study.ai_foreign_language_teacher.llm.ReplyParser;
 import study.ai_foreign_language_teacher.llm.ReplySchema;
 import study.ai_foreign_language_teacher.llm.ReplyTextStream;
 import study.ai_foreign_language_teacher.memory.rules.RuleRetriever;
+import study.ai_foreign_language_teacher.nlp.AgreementPatterns;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
 
@@ -75,7 +76,7 @@ public class TurnEngine {
 
         // LanguageTool первый: детерминированные ошибки находим до LLM и передаём ей как факты
         boolean checkable = !userText.isEmpty() && !in.stuck();
-        List<LtMatch> found = checkable ? checker.check(userText) : List.of();
+        List<LtMatch> found = checkable ? AgreementPatterns.supplement(userText, checker.check(userText)) : List.of();
         List<RuleCard> cards = rules.retrieve(session.cefr(), session.mode(), session.topic(), userText,
                 checkable ? found : null, in.stuck());
 
@@ -131,6 +132,7 @@ public class TurnEngine {
                 && correction.errors().size() == trusted.size();
         boolean explain = (correction != null && !onlySpelling) || in.stuck() || session.mode() == LessonMode.EXPLAIN;
         boolean asked = RuleRetriever.grammarQuestion(userText);
+        boolean genericExplanation = in.stuck() || session.mode() == LessonMode.EXPLAIN;
         TeacherReply.Explanation explanation = parsed.explanation();
         String replyRu = parsed.replyRu();
         List<String> slugs = List.of();
@@ -142,7 +144,7 @@ public class TurnEngine {
             if ((replyRu == null || replyRu.isBlank()) && (in.stuck() || session.cefr().ordinal() <= Cefr.A2.ordinal())) {
                 replyRu = card.ruleRu();
             }
-        } else if (explain) {
+        } else if (explain && ExplanationGate.quotesLearner(userText, explanation, genericExplanation)) {
             explanation = parsed.explanation();
         } else {
             explanation = null;
