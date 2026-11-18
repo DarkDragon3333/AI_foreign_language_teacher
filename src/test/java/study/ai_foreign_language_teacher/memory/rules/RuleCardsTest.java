@@ -80,8 +80,8 @@ class RuleCardsTest {
     @Test
     void promptForbidsInventedRules() {
         RuleCard card = catalog.find("past_simple_ed").orElseThrow();
-        UserProfile profile = new UserProfile(1, "A", "ru", "en", Cefr.A2, false);
-        LessonSession session = new LessonSession(1, 1, LessonMode.CONVERSATION, null, Cefr.A2, 0, Instant.now(), null, null);
+        UserProfile profile = new UserProfile(1, "A", "ru", "en", Cefr.A2, false, 10, UserProfile.DEFAULT_STUDY_WEEKDAYS);
+        LessonSession session = new LessonSession(1, 1, LessonMode.CONVERSATION, null, Cefr.A2, 0, Instant.now(), null, null, null);
         var mapper = JsonMapper.builder().build();
         PromptBuilder prompts = new PromptBuilder(mapper, new ScenarioService(new ScenarioCatalog(mapper)));
         String system = prompts.build(profile, session, List.of(), false, List.of(), List.of(), List.of(), List.of(card)).get(0).content();
@@ -118,7 +118,7 @@ class RuleCardsTest {
         ProfileRepository profiles = new ProfileRepository() {
             @Override
             public UserProfile getOrCreateDefault() {
-                return new UserProfile(7, "A", "ru", "en", Cefr.B1, false);
+                return new UserProfile(7, "A", "ru", "en", Cefr.B1, false, 10, UserProfile.DEFAULT_STUDY_WEEKDAYS);
             }
 
             @Override

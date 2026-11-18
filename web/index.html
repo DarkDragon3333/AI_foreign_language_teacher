@@ -13,7 +13,7 @@
       document.documentElement.dataset.theme = 'sage';
     }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=18">
+  <link rel="stylesheet" href="/css/app.css?v=45">
 </head>
 <body>
   <div class="app">
@@ -56,7 +56,7 @@
         <p class="crumbs"><span id="crumb-a">Learn</span> <span class="crumb-sep">/</span> <span id="crumb-b">Overview</span></p>
         <div class="topbar-right">
           <span id="range-label" class="range-label">English · A1–C2</span>
-          <button id="exit-lesson" type="button" class="text-btn" hidden>Exit lesson</button>
+          <button id="exit-lesson" type="button" class="exit-lesson" hidden>Exit lesson</button>
         </div>
       </header>
 
@@ -109,7 +109,15 @@
                   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 2"/></svg>
                 </div>
                 <h2>Your daily goal</h2>
-                <p class="goal-figure"><span id="goal-value">0</span> <span class="goal-of">/ 10 min</span></p>
+                <label class="goal-pick">Minutes per day
+                  <select id="goal-select" aria-label="Daily goal in minutes">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                  </select>
+                </label>
+                <p class="goal-figure"><span id="goal-value">0</span> <span id="goal-of" class="goal-of">/ 10 min</span></p>
                 <div class="bar goal-bar" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
                   <span id="goal-fill"></span>
                 </div>
@@ -128,30 +136,31 @@
                     </span>
                     <span class="arrow" aria-hidden="true">→</span>
                   </button>
-                  <button id="open-listen" type="button" class="practice-card">
-                    <span class="practice-icon listen" aria-hidden="true">
-                      <svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 3V7L7 10H4z"/><path d="M16 9.2a3.6 3.6 0 0 1 0 5.6M18.2 7a6.2 6.2 0 0 1 0 10"/></svg>
-                    </span>
-                    <span class="practice-copy">
-                      <span class="practice-title">Listen &amp; learn</span>
-                      <span class="practice-meta">4 min · Listening</span>
-                    </span>
-                    <span class="arrow" aria-hidden="true">→</span>
-                  </button>
                 </div>
               </div>
 
-              <article class="path-card">
+              <article class="path-card schedule-card" id="schedule-card">
+                <h2>This week</h2>
+                <p class="section-sub">Study days and what is planned.</p>
+                <div id="weekday-picks" class="weekday-picks" aria-label="Study days">
+                  <button type="button" data-dow="1" class="dow-btn">Mon</button>
+                  <button type="button" data-dow="2" class="dow-btn">Tue</button>
+                  <button type="button" data-dow="3" class="dow-btn">Wed</button>
+                  <button type="button" data-dow="4" class="dow-btn">Thu</button>
+                  <button type="button" data-dow="5" class="dow-btn">Fri</button>
+                  <button type="button" data-dow="6" class="dow-btn">Sat</button>
+                  <button type="button" data-dow="7" class="dow-btn">Sun</button>
+                </div>
+                <ul id="week-slots" class="week-slots"></ul>
+              </article>
+
+              <article class="path-card path-card-levels">
                 <h2>Your learning path</h2>
                 <p>Build your English, one level at a time.</p>
-                <div id="path-chips" class="path-chips">
-                  <button type="button" data-level="A1" class="path-chip is-current">A1</button>
-                  <button type="button" data-level="A2" class="path-chip">A2</button>
-                  <button type="button" data-level="B1" class="path-chip">B1</button>
-                  <button type="button" data-level="B2" class="path-chip">B2</button>
-                  <button type="button" data-level="C1" class="path-chip">C1</button>
-                  <button type="button" data-level="C2" class="path-chip">C2</button>
-                </div>
+                <p class="path-spotlight" aria-label="Current learning level">
+                  <span id="path-current-level" class="path-level-mark" aria-hidden="true">A1</span>
+                  <span id="path-level-name" class="path-level-name">Beginner</span>
+                </p>
                 <button id="explore-levels" type="button" class="text-link">Explore all levels <span aria-hidden="true">→</span></button>
               </article>
             </div>
@@ -238,90 +247,175 @@
             <p class="eyebrow">Your workspace</p>
             <h1>See what to practise next</h1>
             <p class="lede">Rules you missed in lessons. A rule higher in the list came up more often.</p>
-            <div class="progress-actions">
-              <button id="open-review-progress" type="button" class="solid">Review cards <span id="review-count-progress" class="due-count light" hidden></span></button>
-              <button id="export-anki-fsrs" type="button" class="text-btn">Download CSV for Anki</button>
-            </div>
-            <p class="note">Anki: File → Import, separator is a comma. The file holds cards from your reviews.</p>
-            <p id="journal-empty" class="muted" hidden>Nothing here yet. Mistakes show up after the teacher corrects a lesson.</p>
-            <div class="table-scroll">
-              <table id="journal-table" class="journal" hidden>
-                <thead><tr><th>Rule</th><th>From your sentences</th><th class="num">Times</th><th>Last time</th></tr></thead>
-                <tbody id="journal-rows"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+            <h2 class="section-title">Plan review</h2>
+            <p id="insights-summary" class="muted"></p>
+            <button id="revise-plan" type="button" class="solid">Adjust plan</button>
+            <p id="plan-revision" class="note" hidden></p>
 
-        <section id="review" hidden>
-          <div class="practice-sheet">
-            <p class="eyebrow">Useful words</p>
-            <h1>Review a rule</h1>
-            <p id="review-lead" class="lede">These cards come from mistakes in your lessons. Again, Hard, Good and Easy set the next date.</p>
-            <p id="review-empty" class="muted" hidden>Nothing to review today. A card appears here after a mistake in a lesson.</p>
-            <p id="review-status" class="status" hidden></p>
-            <article id="review-card" class="review-card" hidden>
-              <div class="review-head">
-                <h2 id="review-title"></h2>
-                <span id="review-cefr" class="chip"></span>
-              </div>
-              <p id="review-left" class="muted"></p>
-              <p id="review-prompt" class="review-prompt"></p>
-              <p id="review-front" class="example bad"></p>
-              <div id="review-back" hidden>
-                <p id="review-rule"></p>
-                <p id="review-ok" class="example ok"></p>
-                <p id="review-trap" class="ru"></p>
-              </div>
-              <div class="review-actions">
-                <button id="review-show" type="button" class="solid">Show the rule</button>
-                <button id="review-again" type="button" class="rate" hidden>Again</button>
-                <button id="review-hard" type="button" class="rate" hidden>Hard</button>
-                <button id="review-good" type="button" class="rate solid" hidden>Good</button>
-                <button id="review-easy" type="button" class="rate" hidden>Easy</button>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section id="lesson" hidden>
-          <div class="practice-sheet">
-            <div class="practice-progress">
-              <span class="eyebrow">Lesson progress</span>
-              <span id="lesson-fraction">0 / 6</span>
-            </div>
-            <div id="lesson-bar-wrap" class="bar lesson-bar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
-              <span id="lesson-bar"></span>
-            </div>
-            <p id="lesson-kicker" class="eyebrow kicker">A1 · Conversation</p>
-            <h1 id="lesson-heading">Start a conversation</h1>
-            <p id="lesson-lede" class="lede">Write the next line in English, or press Speak.</p>
-
-            <aside id="scenario-panel" class="scenario-panel" hidden>
-              <h2 id="scenario-title" class="scenario-title"></h2>
-              <p class="note">A goal is ticked when your English line includes the cue, or a question mark when the goal is to ask something.</p>
-              <ul id="scenario-goals" class="scenario-goals"></ul>
-            </aside>
-
-            <div class="lesson-bar">
-              <div class="lesson-info">
-                <span id="lesson-mode" class="chip chip-plain"></span>
-                <span id="lesson-topic" class="lesson-topic"></span>
-              </div>
-              <div class="lesson-actions">
-                <div class="level-stepper" role="group" aria-label="Lesson level">
-                  <button id="easier" type="button">Easier</button>
-                  <span class="level-now"><span id="lesson-level" class="chip" aria-live="polite"></span></span>
-                  <button id="harder" type="button">Harder</button>
+            <div class="progress-records">
+              <article class="progress-panel">
+                <header class="progress-panel-head">
+                  <h2 class="section-title">Lesson history</h2>
+                  <button type="button" id="history-show-all" class="text-btn progress-more" hidden>View all</button>
+                </header>
+                <p id="history-empty" class="muted" hidden>No finished lessons yet.</p>
+                <div class="table-scroll progress-table-wrap">
+                  <table id="history-table" class="journal" hidden>
+                    <thead><tr><th>When</th><th>Mode</th><th class="num">Min</th><th class="num">Turns</th><th>Top rule</th></tr></thead>
+                    <tbody id="history-rows"></tbody>
+                  </table>
                 </div>
-                <button id="end" type="button" class="text-btn">End lesson</button>
+              </article>
+              <article class="progress-panel">
+                <header class="progress-panel-head">
+                  <h2 class="section-title">Error journal</h2>
+                  <button type="button" id="journal-show-all" class="text-btn progress-more" hidden>View all</button>
+                </header>
+                <p id="journal-empty" class="muted" hidden>Nothing here yet. Mistakes show up after the teacher corrects a lesson.</p>
+                <div class="table-scroll progress-table-wrap">
+                  <table id="journal-table" class="journal" hidden>
+                    <thead><tr><th>Rule</th><th>From your sentences</th><th class="num">Times</th><th>Last time</th></tr></thead>
+                    <tbody id="journal-rows"></tbody>
+                  </table>
+                </div>
+                <footer class="progress-journal-foot">
+                  <div class="progress-actions">
+                    <button id="open-review-progress" type="button" class="solid">Review cards <span id="review-count-progress" class="due-count light" hidden></span></button>
+                    <button id="export-anki-fsrs" type="button" class="text-btn">Download CSV for Anki</button>
+                  </div>
+                  <p class="note progress-anki-note">Anki: File → Import, separator is a comma. The file holds cards from your reviews.</p>
+                </footer>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="review" class="activity-screen" hidden>
+          <header class="lesson-sticky">
+            <div class="lesson-head-inner">
+              <div class="lesson-head-top">
+                <div class="lesson-head-title"><h1>Useful words</h1></div>
+                <dl class="lesson-stats">
+                  <div class="lesson-stat lesson-stat-progress">
+                    <dt>Progress</dt>
+                    <dd class="lesson-stat-body">
+                      <div id="review-bar-wrap" class="bar lesson-bar lesson-stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
+                        <span id="review-bar"></span>
+                      </div>
+                      <span id="review-fraction" class="lesson-stat-num">0 / 0</span>
+                    </dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Time</dt>
+                    <dd><span id="review-elapsed" class="lesson-stat-num tabular">0:00</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Correct</dt>
+                    <dd><span id="review-correct" class="lesson-stat-num stat-good">0</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Mistakes</dt>
+                    <dd><span id="review-mistakes" class="lesson-stat-num stat-bad">0</span></dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="lesson-head-main">
+                <div class="lesson-head-copy">
+                  <p id="review-lead" class="lesson-lede">Cards from mistakes in your lessons. Again, Hard, Good and Easy set the next date.</p>
+                </div>
               </div>
             </div>
+          </header>
+          <div class="lesson-main">
+            <div class="lesson-body">
+              <p id="review-empty" class="muted" hidden>Nothing to review today. A card appears here after a mistake in a lesson.</p>
+              <p id="review-status" class="status" hidden></p>
+              <article id="review-card" class="review-card" hidden>
+                <div class="review-head">
+                  <h2 id="review-title"></h2>
+                  <span id="review-cefr" class="chip"></span>
+                </div>
+                <p id="review-left" class="muted"></p>
+                <p id="review-prompt" class="review-prompt"></p>
+                <p id="review-front" class="example bad"></p>
+                <div id="review-back" hidden>
+                  <p id="review-rule"></p>
+                  <p id="review-ok" class="example ok"></p>
+                  <p id="review-trap" class="ru"></p>
+                </div>
+                <div class="review-actions">
+                  <button id="review-show" type="button" class="solid">Show the rule</button>
+                  <button id="review-again" type="button" class="rate" hidden>Again</button>
+                  <button id="review-hard" type="button" class="rate" hidden>Hard</button>
+                  <button id="review-good" type="button" class="rate solid" hidden>Good</button>
+                  <button id="review-easy" type="button" class="rate" hidden>Easy</button>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
 
-            <div id="messages" class="messages" aria-live="polite"></div>
-            <p id="status" class="status" hidden><span id="status-text"></span> <button id="retry" type="button" hidden>Try again</button></p>
+        <section id="lesson" class="activity-screen" hidden>
+          <header class="lesson-sticky">
+            <div class="lesson-head-inner">
+              <div class="lesson-head-top">
+                <div class="lesson-head-title">
+                  <span id="lesson-mode" class="visually-hidden"></span>
+                  <h1 id="lesson-heading">Start a conversation</h1>
+                </div>
+                <dl class="lesson-stats">
+                  <div class="lesson-stat lesson-stat-progress">
+                    <dt>Progress</dt>
+                    <dd class="lesson-stat-body">
+                      <div id="lesson-bar-wrap" class="bar lesson-bar lesson-stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+                        <span id="lesson-bar"></span>
+                      </div>
+                      <span id="lesson-fraction" class="lesson-stat-num">0 / 6</span>
+                    </dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Time</dt>
+                    <dd><span id="lesson-elapsed" class="lesson-stat-num tabular">0:00</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Correct</dt>
+                    <dd><span id="lesson-correct" class="lesson-stat-num stat-good">0</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Mistakes</dt>
+                    <dd><span id="lesson-mistakes" class="lesson-stat-num stat-bad">0</span></dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="lesson-head-main">
+                <div class="lesson-head-copy">
+                  <p id="lesson-lede" class="lesson-lede">Write the next line in English, or press Speak.</p>
+                  <p id="lesson-topic" class="lesson-topic-line" hidden></p>
+                </div>
+                <div class="lesson-head-controls">
+                  <div class="level-stepper" role="group" aria-label="Lesson level">
+                    <button id="easier" type="button">Easier</button>
+                    <span class="level-now"><span id="lesson-level" class="chip" aria-live="polite"></span></span>
+                    <button id="harder" type="button">Harder</button>
+                  </div>
+                  <button id="end" type="button" class="end-lesson">End lesson</button>
+                </div>
+              </div>
+              <aside id="scenario-panel" class="scenario-panel lesson-scenario" hidden>
+                <h2 id="scenario-title" class="scenario-title"></h2>
+                <p class="note">A goal is ticked when your English line includes the cue, or a question mark when the goal is to ask something.</p>
+                <ul id="scenario-goals" class="scenario-goals"></ul>
+              </aside>
+            </div>
+          </header>
 
-            <form id="chat-form" class="composer">
+          <div class="lesson-main">
+            <div id="lesson-body" class="lesson-body">
+              <div id="messages" class="messages" aria-live="polite"></div>
+              <p id="status" class="status" hidden><span id="status-text"></span> <button id="retry" type="button" hidden>Try again</button></p>
+            </div>
+
+            <form id="chat-form" class="composer lesson-composer">
               <textarea id="input" rows="2" maxlength="2000" placeholder="Write in English. Enter sends, Shift+Enter starts a new line"></textarea>
               <div class="voice-bar">
                 <label class="voice-toggle">
@@ -351,6 +445,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/main.js?v=16"></script>
+  <script type="module" src="/js/main.js?v=36"></script>
 </body>
 </html>

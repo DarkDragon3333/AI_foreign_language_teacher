@@ -3,6 +3,7 @@ package study.ai_foreign_language_teacher.memory;
 import study.ai_foreign_language_teacher.domain.Cefr;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
+import study.ai_foreign_language_teacher.domain.SessionSummary;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,5 +21,10 @@ public interface SessionRepository {
 
     void updateCefr(long id, Cefr cefr);
 
-    void end(long id);
+    void end(long id, SessionSummary summary);
+
+    /** Минуты по завершённым урокам, начатым в этот календарный день (локальное время сервера). */
+    int practicedMinutesOnDay(long userId, java.time.LocalDate day);
+
+    java.util.Optional<LessonSession> findOpen(long userId);
 }

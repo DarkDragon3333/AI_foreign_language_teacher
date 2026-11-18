@@ -11,7 +11,10 @@ import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.SessionSummary;
 import study.ai_foreign_language_teacher.domain.UserProfile;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.MessageRepository;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
@@ -23,6 +26,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import tools.jackson.core.type.TypeReference;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,15 +39,17 @@ import java.util.Optional;
 @Profile("!memory")
 public class JdbcStore implements ProfileRepository, SessionRepository, MessageRepository, ErrorRepository, StorageHealth {
 
-    private static final RowMapper<UserProfile> PROFILE = (rs, i) -> new UserProfile(
+    private final RowMapper<UserProfile> profileMapper = (rs, i) -> new UserProfile(
             rs.getLong("id"),
             rs.getString("display_name"),
             rs.getString("native_lang"),
             rs.getString("target_lang"),
             Cefr.parseOr(rs.getString("cefr"), Cefr.B1),
-            rs.getBoolean("voice_enabled"));
+            rs.getBoolean("voice_enabled"),
+            rs.getInt("daily_goal_min"),
+            readWeekdays(rs));
 
-    private static final RowMapper<LessonSession> SESSION = (rs, i) -> new LessonSession(
+    private final RowMapper<LessonSession> sessionMapper = (rs, i) -> new LessonSession(
             rs.getLong("id"),
             rs.getLong("user_id"),
             LessonMode.parse(rs.getString("mode")),
@@ -50,7 +58,8 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
             rs.getInt("support_level"),
             instant(rs, "started_at"),
             instant(rs, "ended_at"),
-            rs.getString("model"));
+            rs.getString("model"),
+            readSummary(rs));
 
     private static final RowMapper<ChatMessage> MESSAGE = (rs, i) -> new ChatMessage(
             rs.getLong("id"),
@@ -73,10 +82,38 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
 
     private final JdbcClient jdbc;
     private final TutorProperties props;
+    private final ObjectMapper mapper;
 
-    public JdbcStore(JdbcClient jdbc, TutorProperties props) {
+    public JdbcStore(JdbcClient jdbc, TutorProperties props, ObjectMapper mapper) {
         this.jdbc = jdbc;
         this.props = props;
+        this.mapper = mapper;
+    }
+
+    private List<Integer> readWeekdays(ResultSet rs) throws SQLException {
+        String json = rs.getString("study_weekdays");
+        if (json == null || json.isBlank()) {
+            return UserProfile.DEFAULT_STUDY_WEEKDAYS;
+        }
+        try {
+            List<Integer> days = mapper.readValue(json, new TypeReference<List<Integer>>() {
+            });
+            return days == null || days.isEmpty() ? UserProfile.DEFAULT_STUDY_WEEKDAYS : days;
+        } catch (JacksonException e) {
+            return UserProfile.DEFAULT_STUDY_WEEKDAYS;
+        }
+    }
+
+    private SessionSummary readSummary(ResultSet rs) throws SQLException {
+        String json = rs.getString("summary");
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(json, SessionSummary.class);
+        } catch (JacksonException e) {
+            return null;
+        }
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
@@ -88,27 +125,30 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
 
     @Override
     public synchronized UserProfile getOrCreateDefault() {
-        Optional<UserProfile> existing = jdbc.sql("SELECT * FROM users ORDER BY id LIMIT 1").query(PROFILE).optional();
+        Optional<UserProfile> existing = jdbc.sql("SELECT * FROM users ORDER BY id LIMIT 1").query(profileMapper).optional();
         if (existing.isPresent()) {
             return existing.get();
         }
         TutorProperties.Lesson l = props.lesson();
         return jdbc.sql("""
-                        INSERT INTO users (display_name, native_lang, target_lang, cefr, voice_enabled)
-                        VALUES (:name, :nativeLang, :targetLang, :cefr, FALSE)
+                        INSERT INTO users (display_name, native_lang, target_lang, cefr, voice_enabled, daily_goal_min, study_weekdays)
+                        VALUES (:name, :nativeLang, :targetLang, :cefr, FALSE, :goal, CAST(:weekdays AS jsonb))
                         RETURNING *""")
                 .param("name", "Student")
                 .param("nativeLang", l.nativeLang())
                 .param("targetLang", l.targetLang())
                 .param("cefr", Cefr.parseOr(l.defaultCefr(), Cefr.B1).name())
-                .query(PROFILE).single();
+                .param("goal", UserProfile.DEFAULT_DAILY_GOAL_MIN)
+                .param("weekdays", mapper.writeValueAsString(UserProfile.DEFAULT_STUDY_WEEKDAYS))
+                .query(profileMapper).single();
     }
 
     @Override
     public UserProfile save(UserProfile p) {
         return jdbc.sql("""
                         UPDATE users SET display_name = :name, native_lang = :nativeLang, target_lang = :targetLang,
-                                         cefr = :cefr, voice_enabled = :voice
+                                         cefr = :cefr, voice_enabled = :voice, daily_goal_min = :goal,
+                                         study_weekdays = CAST(:weekdays AS jsonb)
                         WHERE id = :id
                         RETURNING *""")
                 .param("name", p.displayName())
@@ -116,8 +156,10 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
                 .param("targetLang", p.targetLang())
                 .param("cefr", p.cefr().name())
                 .param("voice", p.voiceEnabled())
+                .param("goal", p.dailyGoalMin())
+                .param("weekdays", mapper.writeValueAsString(p.studyWeekdays()))
                 .param("id", p.id())
-                .query(PROFILE).single();
+                .query(profileMapper).single();
     }
 
     // ---- сессии ----
@@ -133,12 +175,12 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
                 .param("mode", mode.name())
                 .param("topic", topic)
                 .param("cefr", cefr.name())
-                .query(SESSION).single();
+                .query(sessionMapper).single();
     }
 
     @Override
     public Optional<LessonSession> find(long id) {
-        return jdbc.sql("SELECT * FROM sessions WHERE id = :id").param("id", id).query(SESSION).optional();
+        return jdbc.sql("SELECT * FROM sessions WHERE id = :id").param("id", id).query(sessionMapper).optional();
     }
 
     @Override
@@ -146,7 +188,29 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
         return jdbc.sql("SELECT * FROM sessions WHERE user_id = :userId ORDER BY id DESC LIMIT :limit")
                 .param("userId", userId)
                 .param("limit", limit)
-                .query(SESSION).list();
+                .query(sessionMapper).list();
+    }
+
+    @Override
+    public Optional<LessonSession> findOpen(long userId) {
+        return jdbc.sql("""
+                        SELECT * FROM sessions WHERE user_id = :userId AND ended_at IS NULL
+                        ORDER BY id DESC LIMIT 1""")
+                .param("userId", userId)
+                .query(sessionMapper).optional();
+    }
+
+    @Override
+    public int practicedMinutesOnDay(long userId, LocalDate day) {
+        Integer sum = jdbc.sql("""
+                        SELECT COALESCE(SUM((summary->>'durationMinutes')::int), 0)
+                        FROM sessions
+                        WHERE user_id = :userId AND ended_at IS NOT NULL
+                          AND started_at::date = :day AND summary IS NOT NULL""")
+                .param("userId", userId)
+                .param("day", day)
+                .query(Integer.class).single();
+        return sum == null ? 0 : sum;
     }
 
     @Override
@@ -162,9 +226,14 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
     }
 
     @Override
-    public void end(long id) {
-        jdbc.sql("UPDATE sessions SET ended_at = now() WHERE id = :id AND ended_at IS NULL")
-                .param("id", id).update();
+    public void end(long id, SessionSummary summary) {
+        String json = mapper.writeValueAsString(summary);
+        jdbc.sql("""
+                        UPDATE sessions SET ended_at = now(), summary = CAST(:summary AS jsonb)
+                        WHERE id = :id AND ended_at IS NULL""")
+                .param("summary", json)
+                .param("id", id)
+                .update();
     }
 
     // ---- сообщения ----
@@ -196,6 +265,14 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
         return jdbc.sql("SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE session_id = :sessionId ORDER BY id")
                 .param("sessionId", sessionId)
                 .query(MESSAGE).list();
+    }
+
+    @Override
+    public int countUserTurns(long sessionId) {
+        Integer count = jdbc.sql("SELECT COUNT(*) FROM messages WHERE session_id = :sessionId AND role = 'USER'")
+                .param("sessionId", sessionId)
+                .query(Integer.class).single();
+        return count == null ? 0 : count;
     }
 
     // ---- ошибки ----
@@ -240,6 +317,27 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
                 .param("userId", userId)
                 .param("limit", limit)
                 .query(ERROR).list();
+    }
+
+    @Override
+    public List<SessionSummary.RuleHit> topRulesInSession(long sessionId, int limit) {
+        return jdbc.sql("""
+                        SELECT lt.rule_id,
+                               COALESCE(MAX(NULLIF(lt.message, '')), lt.rule_id) AS title,
+                               COUNT(*)::int AS cnt
+                        FROM lt_matches lt
+                        JOIN messages m ON m.id = lt.message_id
+                        WHERE m.session_id = :sessionId
+                        GROUP BY lt.rule_id
+                        ORDER BY cnt DESC
+                        LIMIT :limit""")
+                .param("sessionId", sessionId)
+                .param("limit", limit)
+                .query((rs, row) -> new SessionSummary.RuleHit(
+                        rs.getString("rule_id"),
+                        rs.getString("title"),
+                        rs.getInt("cnt")))
+                .list();
     }
 
     // ---- health ----

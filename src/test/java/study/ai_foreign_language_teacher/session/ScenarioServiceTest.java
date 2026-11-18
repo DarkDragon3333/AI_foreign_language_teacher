@@ -24,7 +24,7 @@ class ScenarioServiceTest {
     void setUp() {
         ObjectMapper mapper = JsonMapper.builder().build();
         service = new ScenarioService(new ScenarioCatalog(mapper));
-        session = new LessonSession(1, 1, LessonMode.ROLEPLAY, "cafe", Cefr.A2, 0, Instant.EPOCH, null, null);
+        session = new LessonSession(1, 1, LessonMode.ROLEPLAY, "cafe", Cefr.A2, 0, Instant.EPOCH, null, null, null);
         service.start(1, "cafe");
     }
 
@@ -39,7 +39,7 @@ class ScenarioServiceTest {
 
     @Test
     void questionMarkGoalForInterview() {
-        LessonSession job = new LessonSession(2, 1, LessonMode.ROLEPLAY, "job_interview", Cefr.B1, 0, Instant.EPOCH, null, null);
+        LessonSession job = new LessonSession(2, 1, LessonMode.ROLEPLAY, "job_interview", Cefr.B1, 0, Instant.EPOCH, null, null, null);
         service.start(2, "job_interview");
         service.onUserMessage(2, job, "My name is Anna. I studied marketing.");
         List<String> fresh = service.onUserMessage(2, job, "What is a typical day in this role?");
@@ -48,7 +48,7 @@ class ScenarioServiceTest {
 
     @Test
     void noProgressOutsideRoleplay() {
-        LessonSession talk = new LessonSession(3, 1, LessonMode.CONVERSATION, "travel", Cefr.B1, 0, Instant.EPOCH, null, null);
+        LessonSession talk = new LessonSession(3, 1, LessonMode.CONVERSATION, "travel", Cefr.B1, 0, Instant.EPOCH, null, null, null);
         assertFalse(service.progress(3, talk).isPresent());
         assertEquals(List.of(), service.onUserMessage(3, talk, "Hello"));
     }

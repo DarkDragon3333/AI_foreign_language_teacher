@@ -1,7 +1,7 @@
-import { api, chatTurn, transcribe } from './api.js?v=16';
-import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=16';
-import { openReview, refreshReviewCount } from './review.js?v=16';
-import { VoiceDuplex } from './voice.js?v=16';
+import { api, chatTurn, transcribe } from './api.js?v=18';
+import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=18';
+import { openReview, refreshReviewCount } from './review.js?v=18';
+import { VoiceDuplex } from './voice.js?v=18';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const LEVELS_INFO = {
@@ -25,7 +25,13 @@ const MODE_HEADINGS = {
 const HINT_STEPS = ['· rule', '· example', '· answer', '· answer'];
 const C_LEVEL_NOTE = 'At C1 and C2 this small local model writes more simply than a human teacher. Nuance and idioms are weaker.';
 const PRACTICE_STEPS = 6;
-const GOAL_MIN = 10;
+const PROGRESS_PREVIEW = 5;
+let historyShowAll = false;
+let journalShowAll = false;
+const ACTIVITY_NAMES = {
+  review: 'Review', grammar: 'Grammar', speaking: 'Speaking', listening: 'Listening', conversation: 'Conversation',
+};
+const STATUS_NAMES = { planned: 'Planned', done: 'Done', skipped: 'Skipped', cancelled: 'Cancelled' };
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -39,6 +45,9 @@ const state = {
   scenarios: [],
   scenarioProgress: null,
   starting: false,
+  goalMin: 10,
+  studyWeekdays: [1, 2, 3, 4, 5],
+  lessonTimerMs: 0,
 };
 
 const CRUMBS = {
@@ -76,43 +85,123 @@ async function refreshHealth() {
 
 // ---------- дневная цель ----------
 
-function todayKey() {
-  const d = new Date();
-  return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+function renderGoal(progress) {
+  const goal = state.goalMin;
+  const mins = progress ? Math.min(goal, progress.minutesDone) : 0;
+  $('goal-of').textContent = '/ ' + goal + ' min';
+  $('goal-value').textContent = String(mins);
+  $('goal-fill').style.width = Math.min(100, goal ? (mins / goal) * 100 : 0) + '%';
+  const met = progress?.goalMet;
+  $('goal-caption').textContent = met
+    ? 'Daily goal complete'
+    : mins + ' of ' + goal + ' minutes complete';
+  const bar = $('goal-fill').parentElement;
+  bar.setAttribute('aria-valuemax', String(goal));
+  bar.setAttribute('aria-valuenow', String(mins));
 }
 
-function readPractice() {
+async function refreshGoal() {
   try {
-    const raw = JSON.parse(localStorage.getItem('tutor-practice') || '{}');
-    if (raw.date !== todayKey()) return 0;
-    return Number(raw.ms) || 0;
+    const progress = await api.todayProgress();
+    renderGoal(progress);
   } catch {
-    return 0;
+    renderGoal(null);
   }
 }
 
-function addPractice(ms) {
-  if (ms <= 0) return readPractice();
-  const next = readPractice() + ms;
-  try { localStorage.setItem('tutor-practice', JSON.stringify({ date: todayKey(), ms: next })); } catch { /* приватный режим */ }
-  return next;
+async function loadSchedule() {
+  try {
+    const week = await api.scheduleWeek();
+    state.studyWeekdays = week.studyWeekdays || [1, 2, 3, 4, 5];
+    for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
+      btn.classList.toggle('is-on', state.studyWeekdays.includes(Number(btn.dataset.dow)));
+    }
+    const list = $('week-slots');
+    list.textContent = '';
+    for (const slot of week.slots || []) {
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.className = 'slot-date';
+      label.textContent = new Date(slot.date + 'T12:00:00').toLocaleDateString('en-GB', {
+        weekday: 'short', day: 'numeric', month: 'short',
+      });
+      const select = document.createElement('select');
+      for (const [key, name] of Object.entries(ACTIVITY_NAMES)) {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = name;
+        opt.selected = key === slot.activityType;
+        select.append(opt);
+      }
+      select.disabled = slot.status !== 'planned';
+      select.addEventListener('change', () => {
+        api.patchScheduleSlot(slot.date, { activityType: select.value }).catch((e) => fatal(e.message));
+      });
+      const status = document.createElement('span');
+      status.className = 'slot-status';
+      status.textContent = STATUS_NAMES[slot.status] || slot.status;
+      li.append(label, select, status);
+      list.append(li);
+    }
+  } catch {
+    $('week-slots').textContent = '';
+  }
 }
 
-let practiceMark = Date.now();
-function flushPractice() {
-  const now = Date.now();
-  if (state.tab === 'lesson' && document.visibilityState === 'visible') addPractice(now - practiceMark);
-  practiceMark = now;
+for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
+  btn.addEventListener('click', async () => {
+    const dow = Number(btn.dataset.dow);
+    let days = [...state.studyWeekdays];
+    if (days.includes(dow)) days = days.filter((d) => d !== dow);
+    else days.push(dow);
+    days.sort((a, b) => a - b);
+    try {
+      const week = await api.scheduleWeekdays(days);
+      state.studyWeekdays = week.studyWeekdays;
+      await loadSchedule();
+    } catch (e) {
+      fatal(e.message);
+    }
+  });
 }
 
-function renderGoal() {
-  const ms = readPractice();
-  const mins = Math.min(GOAL_MIN, Math.floor(ms / 60000));
-  $('goal-value').textContent = String(mins);
-  $('goal-fill').style.width = Math.min(100, (ms / (GOAL_MIN * 60000)) * 100) + '%';
-  $('goal-caption').textContent = mins + ' of ' + GOAL_MIN + ' minutes complete';
-  $('goal-fill').parentElement.setAttribute('aria-valuenow', String(mins));
+async function loadInsights() {
+  try {
+    const data = await api.insights(5);
+    $('insights-summary').textContent = data.lessonCount
+      ? `Last ${data.lessonCount} lessons: ${data.totalMinutes} min. Rules: ${(data.frequentRules || []).slice(0, 3).join('; ') || '—'}`
+      : 'Finish a few lessons to see stats here.';
+  } catch {
+    $('insights-summary').textContent = '';
+  }
 }
+
+$('revise-plan').addEventListener('click', async () => {
+  const button = $('revise-plan');
+  button.disabled = true;
+  try {
+    const rev = await api.revisePlan();
+    const node = $('plan-revision');
+    node.hidden = false;
+    node.textContent = `${rev.summary} (${rev.source === 'model' ? 'model' : 'rules'})`;
+    await loadSchedule();
+  } catch (e) {
+    fatal(e.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('goal-select').addEventListener('change', async (event) => {
+  const dailyGoalMin = Number(event.target.value);
+  state.goalMin = dailyGoalMin;
+  try {
+    await api.updateProfile({ dailyGoalMin });
+    await refreshGoal();
+  } catch (e) {
+    fatal(e.message);
+  }
+});
 
 // ---------- уровни и обзор ----------
 
@@ -128,10 +217,11 @@ function markCurrentLevel() {
     const action = card.querySelector('.level-action');
     if (action) action.textContent = on ? 'Continue learning' : 'Explore level';
   }
-  for (const chip of document.querySelectorAll('#path-chips [data-level]')) {
-    chip.classList.toggle('is-current', chip.dataset.level === current);
-  }
   const info = LEVELS_INFO[current] || LEVELS_INFO.A1;
+  const pathMark = $('path-current-level');
+  const pathName = $('path-level-name');
+  if (pathMark) pathMark.textContent = current;
+  if (pathName) pathName.textContent = info.name;
   $('side-level').textContent = current + ' · ' + info.name;
   const note = $('level-note');
   note.hidden = !String(current).startsWith('C');
@@ -205,10 +295,131 @@ function updateLessonProgress() {
   }
 }
 
+function turnHadMistakes(reply) {
+  const c = reply?.correction;
+  if (!c) return false;
+  if (c.errors?.length) return true;
+  if (c.corrected && c.original && c.corrected.trim() !== c.original.trim()) return true;
+  return false;
+}
+
+function statsFromMessages(messages) {
+  let correct = 0;
+  let mistakes = 0;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role !== 'user' || !m.text?.trim()) continue;
+    const next = messages[i + 1];
+    if (next?.role !== 'teacher') continue;
+    if (turnHadMistakes(next.reply)) mistakes += 1;
+    else correct += 1;
+  }
+  return { correct, mistakes };
+}
+
+function updateLessonStats() {
+  const { correct, mistakes } = statsFromMessages(state.history || []);
+  const correctEl = $('lesson-correct');
+  const mistakesEl = $('lesson-mistakes');
+  if (correctEl) correctEl.textContent = String(correct);
+  if (mistakesEl) mistakesEl.textContent = String(mistakes);
+}
+
+let lessonClockTimer = null;
+let lessonClockRunningSince = null;
+
+function formatLessonElapsed(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function lessonTimerStorageKey(sessionId) {
+  return sessionId != null ? 'lesson-active-ms-' + sessionId : null;
+}
+
+function loadLessonTimerMs(sessionId) {
+  const key = lessonTimerStorageKey(sessionId);
+  if (!key) return 0;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw != null) return Math.max(0, parseInt(raw, 10) || 0);
+  } catch { /* приватный режим */ }
+  return 0;
+}
+
+function saveLessonTimerMs(ms) {
+  const key = lessonTimerStorageKey(state.session?.id);
+  if (!key) return;
+  try { sessionStorage.setItem(key, String(Math.max(0, ms))); } catch { /* */ }
+}
+
+function clearLessonTimerStorage(sessionId) {
+  const key = lessonTimerStorageKey(sessionId ?? state.session?.id);
+  if (!key) return;
+  try { sessionStorage.removeItem(key); } catch { /* */ }
+}
+
+function lessonElapsedMs() {
+  let ms = state.lessonTimerMs || 0;
+  if (lessonClockRunningSince != null) ms += Date.now() - lessonClockRunningSince;
+  return ms;
+}
+
+function updateLessonClock() {
+  const el = $('lesson-elapsed');
+  if (!el || !state.session) return;
+  el.textContent = formatLessonElapsed(lessonElapsedMs());
+}
+
+function stopLessonClockInterval() {
+  if (lessonClockTimer) clearInterval(lessonClockTimer);
+  lessonClockTimer = null;
+}
+
+function pauseLessonClock() {
+  if (lessonClockRunningSince != null) {
+    state.lessonTimerMs = lessonElapsedMs();
+    lessonClockRunningSince = null;
+    saveLessonTimerMs(state.lessonTimerMs);
+  }
+  stopLessonClockInterval();
+  updateLessonClock();
+}
+
+function resumeLessonClock() {
+  if (!state.session) return;
+  stopLessonClockInterval();
+  lessonClockRunningSince = Date.now();
+  updateLessonClock();
+  lessonClockTimer = setInterval(updateLessonClock, 1000);
+}
+
+function resetLessonClock(sessionId) {
+  stopLessonClockInterval();
+  lessonClockRunningSince = null;
+  state.lessonTimerMs = 0;
+  clearLessonTimerStorage(sessionId);
+  updateLessonClock();
+}
+
+function bindLessonClock(session) {
+  state.lessonTimerMs = loadLessonTimerMs(session.id);
+  lessonClockRunningSince = null;
+  updateLessonClock();
+}
+
+function syncHistoryFromTurn(payload) {
+  if (payload.user) state.history.push(payload.user);
+  if (payload.teacher) state.history.push(payload.teacher);
+}
+
 function renderDashboard() {
   markCurrentLevel();
   renderHeroCopy();
-  renderGoal();
+  refreshGoal();
+  loadSchedule();
   syncModePills();
   const open = !!state.session;
   $('start-form').hidden = open;
@@ -273,24 +484,35 @@ function updateChrome() {
 }
 
 function showTab(tab) {
-  flushPractice();
-  if (state.tab === 'lesson' && tab !== 'lesson') disableVoiceDuplex();
+  refreshGoal();
+  if (state.tab === 'lesson' && tab !== 'lesson') {
+    disableVoiceDuplex();
+    pauseLessonClock();
+  }
   state.tab = tab;
   for (const id of ['learn', 'levels', 'journal', 'review', 'lesson']) {
     $(id).hidden = id !== tab;
   }
   updateChrome();
-  if (tab === 'journal') loadJournal();
+  if (tab === 'journal') {
+    loadInsights();
+    loadHistory();
+    loadJournal();
+  }
   if (tab === 'review') openReview();
   if (tab === 'learn') renderDashboard();
   if (tab === 'levels') markCurrentLevel();
   if (tab === 'lesson') {
     updateLessonProgress();
+    updateLessonStats();
+    resumeLessonClock();
     $('input').focus();
   }
 }
 
 function showStart() {
+  const endedId = state.session?.id;
+  resetLessonClock(endedId);
   state.session = null;
   state.history = [];
   state.scenarioProgress = null;
@@ -347,6 +569,7 @@ async function beginLesson(opts = {}) {
     const session = await api.startSession({ cefr: level, topic, mode });
     state.history = [];
     state.scenarioProgress = null;
+    resetLessonClock(session.id);
     showLesson(session, []);
     await turn('', false);
   } finally {
@@ -373,6 +596,14 @@ $('side-level-card').addEventListener('click', () => showTab('levels'));
 $('explore-levels').addEventListener('click', () => showTab('levels'));
 $('open-review').addEventListener('click', () => showTab('review'));
 $('open-review-progress').addEventListener('click', () => showTab('review'));
+$('history-show-all').addEventListener('click', () => {
+  historyShowAll = !historyShowAll;
+  loadHistory();
+});
+$('journal-show-all').addEventListener('click', () => {
+  journalShowAll = !journalShowAll;
+  loadJournal();
+});
 $('exit-lesson').addEventListener('click', () => showTab('learn'));
 $('resume-lesson').addEventListener('click', () => resumeLesson());
 
@@ -396,18 +627,8 @@ $('level-grid').addEventListener('click', (event) => {
     selectLevel(level);
   }
 });
-$('path-chips').addEventListener('click', (event) => {
-  const chip = event.target.closest('[data-level]');
-  if (!chip) return;
-  selectLevel(chip.dataset.level);
-  showTab('levels');
-});
 $('level-check').addEventListener('click', () => {
   beginLesson({ mode: 'conversation', topic: 'level check' }).catch((e) => fatal(e.message));
-});
-$('open-listen').addEventListener('click', () => {
-  const topic = $('topic').value.trim() || 'everyday English';
-  beginLesson({ mode: 'conversation', topic }).catch((e) => fatal(e.message));
 });
 
 $('start-form').addEventListener('submit', async (event) => {
@@ -423,42 +644,108 @@ $('start-form').addEventListener('submit', async (event) => {
   }
 });
 
+function setProgressMoreButton(button, total, expanded) {
+  if (!button) return;
+  if (total <= PROGRESS_PREVIEW) {
+    button.hidden = true;
+    return;
+  }
+  button.hidden = false;
+  button.textContent = expanded ? 'Show less' : `View all (${total})`;
+}
+
+function setProgressTableExpanded(tableId, expanded) {
+  const wrap = $(tableId)?.closest('.progress-table-wrap');
+  if (wrap) wrap.classList.toggle('is-expanded', expanded);
+}
+
+function appendHistoryRow(rows, s) {
+  const tr = document.createElement('tr');
+  const when = document.createElement('td');
+  when.textContent = new Date(s.startedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const mode = document.createElement('td');
+  mode.textContent = MODE_NAMES[s.mode] || s.mode;
+  const min = document.createElement('td');
+  min.className = 'num';
+  min.textContent = s.summary ? String(s.summary.durationMinutes) : '—';
+  const turns = document.createElement('td');
+  turns.className = 'num';
+  turns.textContent = s.summary ? String(s.summary.userTurns) : '—';
+  const rule = document.createElement('td');
+  const top = s.summary?.topRules?.[0];
+  rule.textContent = top ? (top.title || top.ruleId) : '—';
+  tr.append(when, mode, min, turns, rule);
+  rows.append(tr);
+}
+
+function appendJournalRow(rows, e) {
+  const tr = document.createElement('tr');
+  const rule = document.createElement('td');
+  const title = document.createElement('div');
+  title.className = 'rule-title';
+  title.textContent = e.title || e.ruleId;
+  const category = document.createElement('div');
+  category.className = 'rule-category';
+  category.textContent = e.category || '';
+  rule.append(title, category);
+  const example = document.createElement('td');
+  if (e.example) {
+    const span = document.createElement('span');
+    span.className = 'err-span';
+    span.textContent = e.example;
+    example.append(span);
+  }
+  const count = document.createElement('td');
+  count.className = 'num';
+  count.textContent = e.count;
+  const seen = document.createElement('td');
+  seen.textContent = new Date(e.lastSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  tr.append(rule, example, count, seen);
+  rows.append(tr);
+}
+
+async function loadHistory() {
+  const rows = $('history-rows');
+  const moreBtn = $('history-show-all');
+  rows.textContent = '';
+  try {
+    const list = await api.sessions();
+    const finished = list
+      .filter((s) => s.endedAt)
+      .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+    $('history-empty').hidden = finished.length > 0;
+    $('history-table').hidden = finished.length === 0;
+    const shown = historyShowAll ? finished : finished.slice(0, PROGRESS_PREVIEW);
+    for (const s of shown) appendHistoryRow(rows, s);
+    setProgressMoreButton(moreBtn, finished.length, historyShowAll);
+    setProgressTableExpanded('history-table', historyShowAll);
+  } catch {
+    $('history-table').hidden = true;
+    $('history-empty').hidden = false;
+    $('history-empty').textContent = 'Could not load lesson history.';
+    if (moreBtn) moreBtn.hidden = true;
+  }
+}
+
 async function loadJournal() {
   const rows = $('journal-rows');
+  const moreBtn = $('journal-show-all');
   try {
-    const entries = await api.errors();
+    const entries = (await api.errors()).slice().sort(
+      (a, b) => new Date(b.lastSeen) - new Date(a.lastSeen),
+    );
     rows.textContent = '';
     $('journal-empty').hidden = entries.length > 0;
     $('journal-table').hidden = entries.length === 0;
-    for (const e of entries) {
-      const tr = document.createElement('tr');
-      const rule = document.createElement('td');
-      const title = document.createElement('div');
-      title.className = 'rule-title';
-      title.textContent = e.title || e.ruleId;
-      const category = document.createElement('div');
-      category.className = 'rule-category';
-      category.textContent = e.category || '';
-      rule.append(title, category);
-      const example = document.createElement('td');
-      if (e.example) {
-        const span = document.createElement('span');
-        span.className = 'err-span';
-        span.textContent = e.example;
-        example.append(span);
-      }
-      const count = document.createElement('td');
-      count.className = 'num';
-      count.textContent = e.count;
-      const seen = document.createElement('td');
-      seen.textContent = new Date(e.lastSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-      tr.append(rule, example, count, seen);
-      rows.append(tr);
-    }
+    const shown = journalShowAll ? entries : entries.slice(0, PROGRESS_PREVIEW);
+    for (const e of shown) appendJournalRow(rows, e);
+    setProgressMoreButton(moreBtn, entries.length, journalShowAll);
+    setProgressTableExpanded('journal-table', journalShowAll);
   } catch (e) {
     $('journal-table').hidden = true;
     $('journal-empty').hidden = false;
     $('journal-empty').textContent = 'Could not load progress: ' + e.message;
+    if (moreBtn) moreBtn.hidden = true;
   }
 }
 
@@ -467,6 +754,7 @@ async function loadJournal() {
 function showLesson(session, messages) {
   $('fatal').hidden = true;
   state.session = session;
+  bindLessonClock(session);
   state.history = messages || [];
   const list = $('messages');
   list.textContent = '';
@@ -477,6 +765,7 @@ function showLesson(session, messages) {
   applySession(session);
   if (session.mode === 'roleplay') refreshScenarioPanel();
   syncVoiceControls();
+  updateLessonStats();
   scrollDown();
 }
 
@@ -515,12 +804,13 @@ async function refreshScenarioPanel() {
 function applySession(session) {
   state.session = session;
   $('lesson-level').textContent = session.cefr;
-  $('lesson-mode').textContent = MODE_NAMES[session.mode] || session.mode;
+  $('lesson-mode').textContent = session.cefr + ' · ' + (MODE_NAMES[session.mode] || session.mode);
   const topicLabel = session.mode === 'roleplay'
     ? (state.scenarios.find((s) => s.slug === session.topic)?.titleRu || session.topic)
     : (session.topic || '');
-  $('lesson-topic').textContent = topicLabel;
-  $('lesson-kicker').textContent = session.cefr + ' · ' + (MODE_NAMES[session.mode] || session.mode);
+  const topicEl = $('lesson-topic');
+  topicEl.textContent = topicLabel;
+  topicEl.hidden = !topicLabel;
   $('lesson-heading').textContent = heroTitle(session);
   $('lesson-lede').textContent = session.mode === 'roleplay'
     ? 'Stay in the scene. A goal ticks off when your line includes the cue.'
@@ -734,8 +1024,9 @@ talkButton.addEventListener('contextmenu', (event) => event.preventDefault());
 $('retry').addEventListener('click', () => turn('', false));
 
 function scrollDown() {
-  const list = $('messages');
-  list.scrollTop = list.scrollHeight;
+  const scroller = $('lesson-body');
+  if (!scroller) return;
+  scroller.scrollTop = scroller.scrollHeight;
 }
 
 async function turn(text, hint, aloud) {
@@ -757,6 +1048,8 @@ async function turn(text, hint, aloud) {
         if (!shownUser && payload.user) placeholder.node.before(userMessage(payload.user.text));
         placeholder.finish(payload.teacher.reply, payload.teacher.text);
         applySession(payload.session);
+        syncHistoryFromTurn(payload);
+        updateLessonStats();
         if (payload.scenario) renderScenarioProgress(payload.scenario);
         if (aloud) {
           speakMessage(placeholder.node).catch(() => setStatus('Press Listen to hear the reply'));
@@ -837,6 +1130,7 @@ $('end').addEventListener('click', async () => {
   try {
     disableVoiceDuplex();
     await api.endSession(state.session.id);
+    await refreshGoal();
     setStatus('');
     showStart();
   } catch (e) {
@@ -853,16 +1147,19 @@ function fatal(message) {
 async function boot() {
   refreshHealth();
   setInterval(refreshHealth, 30000);
-  setInterval(flushPractice, 5000);
-  document.addEventListener('visibilitychange', flushPractice);
-  renderGoal();
+  setInterval(() => { if (state.tab === 'learn' || state.tab === 'lesson') refreshGoal(); }, 30000);
   await loadScenarios();
   try {
     const profile = await api.profile();
     state.level = LEVELS_INFO[profile.cefr] ? profile.cefr : state.level;
+    state.goalMin = profile.dailyGoalMin || 10;
+    state.studyWeekdays = profile.studyWeekdays || state.studyWeekdays;
+    $('goal-select').value = String(state.goalMin);
+    await refreshGoal();
     const open = (await api.sessions()).find((s) => !s.endedAt);
     if (open) {
       state.session = open;
+      bindLessonClock(open);
       state.level = open.cefr || state.level;
       state.history = await api.messages(open.id);
       if (open.mode === 'roleplay') {

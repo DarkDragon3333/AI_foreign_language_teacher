@@ -13,4 +13,6 @@ public interface MessageRepository {
     List<ChatMessage> lastN(long sessionId, int n);
 
     List<ChatMessage> all(long sessionId);
+
+    int countUserTurns(long sessionId);
 }

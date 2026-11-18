@@ -11,9 +11,10 @@ public record LessonSession(
         int supportLevel,
         Instant startedAt,
         Instant endedAt,
-        String model) {
+        String model,
+        SessionSummary summary) {
 
     public LessonSession withSupportLevel(int level) {
-        return new LessonSession(id, userId, mode, topic, cefr, level, startedAt, endedAt, model);
+        return new LessonSession(id, userId, mode, topic, cefr, level, startedAt, endedAt, model, summary);
     }
 }

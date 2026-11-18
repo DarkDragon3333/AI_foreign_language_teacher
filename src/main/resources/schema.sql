@@ -101,3 +101,23 @@ CREATE TABLE IF NOT EXISTS fsrs_cards (
     PRIMARY KEY (user_id, slug)
 );
 CREATE INDEX IF NOT EXISTS idx_fsrs_due ON fsrs_cards (user_id, due);
+
+-- ---- Шаг 9: дневная цель и сводка урока ----
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_min INT NOT NULL DEFAULT 10;
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS summary JSONB;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS study_weekdays JSONB NOT NULL DEFAULT '[1,2,3,4,5]'::jsonb;
+
+CREATE TABLE IF NOT EXISTS schedule_slots (
+    id            BIGSERIAL PRIMARY KEY,
+    user_id       BIGINT      NOT NULL REFERENCES users (id),
+    slot_date     DATE        NOT NULL,
+    activity_type TEXT        NOT NULL,
+    status        TEXT        NOT NULL,
+    session_id    BIGINT      REFERENCES sessions (id),
+    plan_note     TEXT,
+    UNIQUE (user_id, slot_date)
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_slots_user ON schedule_slots (user_id, slot_date);

@@ -9,6 +9,7 @@ import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.SessionSummary;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.MessageRepository;
@@ -18,6 +19,8 @@ import study.ai_foreign_language_teacher.memory.StorageHealth;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -49,7 +52,8 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
         if (profile == null) {
             TutorProperties.Lesson l = props.lesson();
             profile = new UserProfile(1, "Student", l.nativeLang(), l.targetLang(),
-                    Cefr.parseOr(l.defaultCefr(), Cefr.B1), false);
+                    Cefr.parseOr(l.defaultCefr(), Cefr.B1), false, UserProfile.DEFAULT_DAILY_GOAL_MIN,
+                    UserProfile.DEFAULT_STUDY_WEEKDAYS);
         }
         return profile;
     }
@@ -62,7 +66,7 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
 
     @Override
     public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model) {
-        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(), null, model);
+        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(), null, model, null);
         sessions.put(s.id(), s);
         return s;
     }
@@ -84,19 +88,36 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     @Override
     public void updateSupportLevel(long id, int supportLevel) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                supportLevel, s.startedAt(), s.endedAt(), s.model()));
+                supportLevel, s.startedAt(), s.endedAt(), s.model(), s.summary()));
     }
 
     @Override
     public void updateCefr(long id, Cefr cefr) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), cefr,
-                s.supportLevel(), s.startedAt(), s.endedAt(), s.model()));
+                s.supportLevel(), s.startedAt(), s.endedAt(), s.model(), s.summary()));
     }
 
     @Override
-    public void end(long id) {
+    public void end(long id, SessionSummary summary) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                s.supportLevel(), s.startedAt(), Instant.now(), s.model()));
+                s.supportLevel(), s.startedAt(), Instant.now(), s.model(), summary));
+    }
+
+    @Override
+    public Optional<LessonSession> findOpen(long userId) {
+        return sessions.values().stream()
+                .filter(s -> s.userId() == userId && s.endedAt() == null)
+                .max(Comparator.comparingLong(LessonSession::id));
+    }
+
+    @Override
+    public int practicedMinutesOnDay(long userId, LocalDate day) {
+        ZoneId zone = ZoneId.systemDefault();
+        return sessions.values().stream()
+                .filter(s -> s.userId() == userId && s.endedAt() != null && s.summary() != null)
+                .filter(s -> LocalDate.ofInstant(s.startedAt(), zone).equals(day))
+                .mapToInt(s -> s.summary().durationMinutes())
+                .sum();
     }
 
     @Override
@@ -113,6 +134,11 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     public List<ChatMessage> lastN(long sessionId, int n) {
         List<ChatMessage> all = all(sessionId);
         return all.subList(Math.max(0, all.size() - n), all.size());
+    }
+
+    @Override
+    public int countUserTurns(long sessionId) {
+        return (int) all(sessionId).stream().filter(m -> m.role() == Role.USER).count();
     }
 
     @Override
@@ -138,6 +164,24 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
         errors.merge(userId + ":" + ruleId,
                 new ErrorEvent(ruleId, source, category, title, span, 1, Instant.now()),
                 (old, fresh) -> new ErrorEvent(ruleId, source, category, title, span, old.count() + 1, fresh.lastSeen()));
+    }
+
+    @Override
+    public List<SessionSummary.RuleHit> topRulesInSession(long sessionId, int limit) {
+        java.util.Map<String, SessionSummary.RuleHit> counts = new java.util.HashMap<>();
+        for (ChatMessage m : all(sessionId)) {
+            List<LtMatch> matches = ltMatches.getOrDefault(m.id(), List.of());
+            for (LtMatch match : matches) {
+                String title = match.title().isBlank() ? match.ruleId() : match.title();
+                counts.merge(match.ruleId(),
+                        new SessionSummary.RuleHit(match.ruleId(), title, 1),
+                        (a, b) -> new SessionSummary.RuleHit(a.ruleId(), a.title(), a.count() + 1));
+            }
+        }
+        return counts.values().stream()
+                .sorted(Comparator.comparingInt(SessionSummary.RuleHit::count).reversed())
+                .limit(limit)
+                .toList();
     }
 
     @Override

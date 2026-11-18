@@ -9,6 +9,7 @@ import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.NotFoundException;
 import study.ai_foreign_language_teacher.domain.Role;
+import study.ai_foreign_language_teacher.domain.SessionSummary;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.llm.LlmClient;
@@ -24,9 +25,12 @@ import study.ai_foreign_language_teacher.memory.SessionRepository;
 import study.ai_foreign_language_teacher.memory.rules.ReviewService;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
+import study.ai_foreign_language_teacher.schedule.ScheduleService;
 import study.ai_foreign_language_teacher.speech.SttPromptBuilder;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -51,10 +55,12 @@ public class LessonService {
     private final ObjectMapper mapper;
     private final TutorProperties props;
     private final ScenarioService scenarios;
+    private final ScheduleService schedule;
 
     public LessonService(ProfileRepository profiles, SessionRepository sessions, MessageRepository messages,
                          ErrorRepository errors, TurnEngine engine, ReviewService reviews, LlmClient llm,
-                         ObjectMapper mapper, TutorProperties props, ScenarioService scenarios) {
+                         ObjectMapper mapper, TutorProperties props, ScenarioService scenarios,
+                         ScheduleService schedule) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.messages = messages;
@@ -65,6 +71,7 @@ public class LessonService {
         this.mapper = mapper;
         this.props = props;
         this.scenarios = scenarios;
+        this.schedule = schedule;
     }
 
     public LessonSession startSession(String cefr, String topic, String mode, String model) {
@@ -118,10 +125,32 @@ public class LessonService {
     }
 
     public LessonSession endSession(long id) {
-        getSession(id);
-        sessions.end(id);
+        LessonSession session = getSession(id);
+        if (session.endedAt() != null) {
+            scenarios.clear(id);
+            return session;
+        }
+        Instant endedAt = Instant.now();
+        SessionSummary summary = SessionSummaries.build(session, endedAt, messages, errors);
+        sessions.end(id, summary);
+        schedule.onSessionEnded(getSession(id));
         scenarios.clear(id);
         return getSession(id);
+    }
+
+    public record DailyProgress(int minutesDone, int goalMinutes, boolean goalMet) {
+    }
+
+    public DailyProgress todayProgress() {
+        UserProfile profile = profiles.getOrCreateDefault();
+        LocalDate today = LocalDate.now();
+        int minutes = sessions.practicedMinutesOnDay(profile.id(), today);
+        int openMinutes = sessions.findOpen(profile.id())
+                .map(open -> SessionSummaries.durationMinutes(open.startedAt(), Instant.now()))
+                .orElse(0);
+        minutes += openMinutes;
+        int goal = profile.dailyGoalMin();
+        return new DailyProgress(minutes, goal, minutes >= goal);
     }
 
     public LessonSession changeLevel(long id, String cefr) {
