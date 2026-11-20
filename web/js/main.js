@@ -59,8 +59,9 @@ const CRUMBS = {
   review: ['Learn', 'Practice'],
   lesson: ['Learn', 'Practice'],
   grammar: ['Learn', 'Grammar'],
+  speaking: ['Learn', 'Speaking'],
 };
-const PRACTICE_TABS = new Set(['grammar', 'review']);
+const PRACTICE_TABS = new Set(['grammar', 'speaking', 'review']);
 
 // ---------- тема оформления ----------
 
@@ -499,7 +500,7 @@ function showTab(tab) {
   }
   if (PRACTICE_TABS.has(state.tab) && !PRACTICE_TABS.has(tab)) pausePracticeScreen();
   state.tab = tab;
-  for (const id of ['learn', 'levels', 'journal', 'review', 'grammar', 'lesson']) {
+  for (const id of ['learn', 'levels', 'journal', 'review', 'grammar', 'speaking', 'lesson']) {
     $(id).hidden = id !== tab;
   }
   updateChrome();
@@ -649,6 +650,7 @@ $('level-check').addEventListener('click', () => {
   beginLesson({ mode: 'conversation', topic: 'level check' }).catch((e) => fatal(e.message));
 });
 $('open-grammar').addEventListener('click', () => showTab('grammar'));
+$('open-speaking').addEventListener('click', () => showTab('speaking'));
 
 $('start-form').addEventListener('submit', async (event) => {
   event.preventDefault();

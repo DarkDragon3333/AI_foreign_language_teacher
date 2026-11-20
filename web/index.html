@@ -146,6 +146,14 @@
                     </span>
                     <span class="arrow" aria-hidden="true">→</span>
                   </button>
+                  <button id="open-speaking" type="button" class="practice-card">
+                    <span class="practice-icon" aria-hidden="true">🎤</span>
+                    <span class="practice-copy">
+                      <span class="practice-title">Speaking</span>
+                      <span class="practice-meta">Say the line</span>
+                    </span>
+                    <span class="arrow" aria-hidden="true">→</span>
+                  </button>
                 </div>
               </div>
 
@@ -440,6 +448,70 @@
                     <div id="grammar-trail-right" class="grammar-trail-list" role="list"></div>
                   </section>
                 </aside>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="speaking" class="activity-screen" hidden>
+          <header class="lesson-sticky">
+            <div class="lesson-head-inner">
+              <div class="lesson-head-top">
+                <div class="lesson-head-title"><h1>Speaking</h1></div>
+                <dl class="lesson-stats">
+                  <div class="lesson-stat lesson-stat-progress">
+                    <dt>Progress</dt>
+                    <dd class="lesson-stat-body">
+                      <div id="speaking-bar-wrap" class="bar lesson-bar lesson-stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+                        <span id="speaking-bar"></span>
+                      </div>
+                      <span id="speaking-fraction" class="lesson-stat-num">0 / 6</span>
+                    </dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Time</dt>
+                    <dd><span id="speaking-elapsed" class="lesson-stat-num tabular">0:00</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Correct</dt>
+                    <dd><span id="speaking-correct" class="lesson-stat-num stat-good">0</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Mistakes</dt>
+                    <dd><span id="speaking-mistakes" class="lesson-stat-num stat-bad">0</span></dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="lesson-head-main">
+                <div class="lesson-head-copy">
+                  <p class="lesson-lede">Six short lines. Start a set, listen, then repeat each line.</p>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="lesson-main">
+            <div class="lesson-body practice-body">
+              <div id="speaking-launch" class="grammar-launch">
+                <p class="speaking-launch-copy">Six spoken lines for your level.</p>
+                <button id="speaking-start" type="button" class="solid">Start set</button>
+              </div>
+              <div class="grammar-workspace speaking-workspace">
+                <div class="grammar-main">
+                  <div class="practice-focus grammar-stack">
+                    <article id="speaking-card" class="review-card grammar-card" hidden>
+                      <p id="speaking-meta" class="muted"></p>
+                      <p id="speaking-phrase" class="review-prompt"></p>
+                      <button id="speaking-listen" type="button" class="text-btn speaking-listen">Listen again</button>
+                      <p id="speaking-status" class="grammar-feedback status" role="status" hidden></p>
+                      <p id="speaking-heard" class="note speaking-heard"></p>
+                      <ul id="speaking-list" class="speaking-list"></ul>
+                      <div class="grammar-compose speaking-compose">
+                        <button id="speaking-record" type="button" class="solid speaking-record-btn">Record</button>
+                      </div>
+                    </article>
+                    <p id="speaking-done" class="grammar-done note" hidden>Finished. Start another set if you like.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

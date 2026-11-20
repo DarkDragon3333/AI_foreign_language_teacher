@@ -183,6 +183,25 @@ public final class Dto {
         }
     }
 
+    public record SpeakingPhraseView(long runId, String phrase) {
+        static SpeakingPhraseView of(study.ai_foreign_language_teacher.practice.SpeakingPracticeService.PhraseView v) {
+            return new SpeakingPhraseView(v.runId(), v.phrase());
+        }
+    }
+
+    public record SpeakingMismatchView(String expected, String heard, String kind) {
+        static SpeakingMismatchView of(study.ai_foreign_language_teacher.practice.SpeechAligner.WordMismatch m) {
+            return new SpeakingMismatchView(m.expected(), m.heard(), m.kind());
+        }
+    }
+
+    public record SpeakingGradeView(String heard, List<SpeakingMismatchView> mismatches) {
+        static SpeakingGradeView of(study.ai_foreign_language_teacher.practice.SpeakingPracticeService.GradeView v) {
+            return new SpeakingGradeView(v.heard(),
+                    v.mismatches().stream().map(SpeakingMismatchView::of).toList());
+        }
+    }
+
     public record ScenarioListItem(String slug, String title, String titleRu, String cefrMin, String cefrMax,
                                    int goals) {
         static ScenarioListItem of(study.ai_foreign_language_teacher.domain.RoleScenario s) {
