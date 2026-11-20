@@ -685,6 +685,89 @@ select optgroup {
 }
 .speaking-list { list-style: none; padding: 0; margin: 0 0 8px; font-size: 14px; }
 .speaking-list li { margin: 6px 0; }
+.listening-launch {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.listening-launch-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.listening-launch-hint {
+  margin: 0;
+  max-width: 22ch;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.listening-launch-custom {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.listening-launch-custom .text-btn { align-self: flex-start; padding: 0; }
+.listening-paste { display: block; margin: 0; font-size: 14px; color: var(--muted); }
+.listening-paste textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  resize: vertical;
+  min-height: 3.25rem;
+  font: inherit;
+  font-size: 15px;
+}
+.listening-workspace:has(#listening-card[hidden]):not(:has(#listening-done:not([hidden]))) {
+  display: none;
+}
+.listening-passage { margin: 0 0 14px; font-size: 15px; line-height: 1.45; color: var(--muted); }
+.listening-questions { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 0; }
+.listening-q { margin: 0; }
+.listening-q label { display: block; }
+.listening-q-label { display: block; margin-bottom: 6px; font-size: 14px; line-height: 1.4; color: var(--ink); }
+.listening-q .grammar-answer-input { width: 100%; margin: 0; }
+.listening-compose { justify-content: center; }
+.listening-compose button { min-width: 11rem; padding: 12px 28px; }
+#listening-trail-wrap {
+  width: min(17.5rem, 46vw);
+  left: max(0px, calc(50% - 20rem - 17.5rem - 22px));
+}
+#listening-trail-wrap .grammar-trail-prompt {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+}
+#listening-trail-wrap .grammar-trail-value {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+  font-weight: 600;
+}
+.listening-q-feedback {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.listening-answer.answer-wrong {
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+}
+.listening-answer.answer-good {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+}
+.listening-answer:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+
 .practice-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

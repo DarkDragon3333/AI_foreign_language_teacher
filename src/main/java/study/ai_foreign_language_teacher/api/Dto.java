@@ -202,6 +202,31 @@ public final class Dto {
         }
     }
 
+    public record ListeningCustomRequest(String text) {
+    }
+
+    public record ListeningQuestionView(String question, List<String> acceptable) {
+        static ListeningQuestionView of(study.ai_foreign_language_teacher.practice.ListeningPracticeService.QuestionView q) {
+            return new ListeningQuestionView(q.question(), q.acceptable());
+        }
+    }
+
+    public record ListeningStartView(long runId, String passage, List<ListeningQuestionView> questions, String warning) {
+        static ListeningStartView of(study.ai_foreign_language_teacher.practice.ListeningPracticeService.StartView v) {
+            return new ListeningStartView(v.runId(), v.passage(),
+                    v.questions().stream().map(ListeningQuestionView::of).toList(), v.warning());
+        }
+    }
+
+    public record ListeningSubmitRequest(List<String> answers) {
+    }
+
+    public record ListeningSubmitView(int correct, int total, List<Boolean> results) {
+        static ListeningSubmitView of(study.ai_foreign_language_teacher.practice.ListeningPracticeService.SubmitView v) {
+            return new ListeningSubmitView(v.correct(), v.total(), v.results());
+        }
+    }
+
     public record ScenarioListItem(String slug, String title, String titleRu, String cefrMin, String cefrMax,
                                    int goals) {
         static ScenarioListItem of(study.ai_foreign_language_teacher.domain.RoleScenario s) {

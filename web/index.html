@@ -154,6 +154,16 @@
                     </span>
                     <span class="arrow" aria-hidden="true">→</span>
                   </button>
+                  <button id="open-listen" type="button" class="practice-card">
+                    <span class="practice-icon listen" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 3V7L7 10H4z"/><path d="M16 9.2a3.6 3.6 0 0 1 0 5.6M18.2 7a6.2 6.2 0 0 1 0 10"/></svg>
+                    </span>
+                    <span class="practice-copy">
+                      <span class="practice-title">Listen &amp; learn</span>
+                      <span class="practice-meta">4 min · Listening</span>
+                    </span>
+                    <span class="arrow" aria-hidden="true">→</span>
+                  </button>
                 </div>
               </div>
 
@@ -512,6 +522,88 @@
                     <p id="speaking-done" class="grammar-done note" hidden>Finished. Start another set if you like.</p>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="listening" class="activity-screen" hidden>
+          <header class="lesson-sticky">
+            <div class="lesson-head-inner">
+              <div class="lesson-head-top">
+                <div class="lesson-head-title"><h1>Listen and answer</h1></div>
+                <dl class="lesson-stats">
+                  <div class="lesson-stat lesson-stat-progress">
+                    <dt>Progress</dt>
+                    <dd class="lesson-stat-body">
+                      <div id="listening-bar-wrap" class="bar lesson-bar lesson-stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="4" aria-valuenow="0">
+                        <span id="listening-bar"></span>
+                      </div>
+                      <span id="listening-fraction" class="lesson-stat-num">0 / 4</span>
+                    </dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Time</dt>
+                    <dd><span id="listening-elapsed" class="lesson-stat-num tabular">0:00</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Correct</dt>
+                    <dd><span id="listening-correct" class="lesson-stat-num stat-good">0</span></dd>
+                  </div>
+                  <div class="lesson-stat">
+                    <dt>Mistakes</dt>
+                    <dd><span id="listening-mistakes" class="lesson-stat-num stat-bad">0</span></dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="lesson-head-main">
+                <div class="lesson-head-copy">
+                  <p class="lesson-lede">Short story from the teacher, or paste your own text.</p>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="lesson-main">
+            <div class="lesson-body practice-body">
+              <div id="listening-launch" class="grammar-launch listening-launch">
+                <div class="listening-launch-main">
+                  <button id="listening-generated" type="button" class="solid">Short story</button>
+                  <p class="listening-launch-hint">About a minute at your level.</p>
+                </div>
+                <div class="listening-launch-custom">
+                  <label class="listening-paste">Or paste text
+                    <textarea id="listening-custom" rows="2" maxlength="2000" placeholder="English paragraph…"></textarea>
+                  </label>
+                  <button id="listening-custom-go" type="button" class="text-btn">Listen to my text</button>
+                </div>
+              </div>
+              <div class="grammar-workspace listening-workspace">
+                <div class="grammar-main">
+                  <div class="practice-focus grammar-stack">
+                    <article id="listening-card" class="review-card grammar-card" hidden>
+                      <p id="listening-meta" class="muted"></p>
+                      <button id="listening-replay" type="button" class="text-btn speaking-listen">Listen again</button>
+                      <p id="listening-warning" class="grammar-rule note" hidden></p>
+                      <p id="listening-passage" class="review-prompt listening-passage" hidden></p>
+                      <div id="listening-questions" class="listening-questions"></div>
+                      <p id="listening-result" class="grammar-feedback status" role="status" hidden></p>
+                      <div class="grammar-compose listening-compose">
+                        <button id="listening-submit" type="button" class="solid" disabled>Check answers</button>
+                      </div>
+                    </article>
+                    <p id="listening-done" class="grammar-done note" hidden>Finished. Start another set if you like.</p>
+                  </div>
+                </div>
+                <aside id="listening-trail-wrap" class="grammar-trail-wrap" hidden>
+                  <section class="grammar-trail-col" aria-labelledby="listening-trail-wrong-h">
+                    <h2 id="listening-trail-wrong-h" class="grammar-trail-heading">Not quite</h2>
+                    <div id="listening-trail-wrong" class="grammar-trail-list" role="list"></div>
+                  </section>
+                  <section class="grammar-trail-col" aria-labelledby="listening-trail-right-h">
+                    <h2 id="listening-trail-right-h" class="grammar-trail-heading">Correct</h2>
+                    <div id="listening-trail-right" class="grammar-trail-list" role="list"></div>
+                  </section>
+                </aside>
               </div>
             </div>
           </div>

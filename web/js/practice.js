@@ -14,6 +14,9 @@ let grammarRun = null;
 let grammarCurrent = null;
 let speakingRun = null;
 let speakingPhraseIndex = 0;
+let listeningRun = null;
+let listeningQuestions = [];
+let listeningPassageText = '';
 const SPEAKING_SET_SIZE = 6;
 const speakRec = { recorder: null, chunks: [], stream: null, startedAt: 0, timer: null, arming: false };
 
@@ -252,6 +255,7 @@ function finishSpeakingSet() {
 export function stopActivePractice(tab) {
   if (tab === 'grammar') stopGrammarSet();
   else if (tab === 'speaking') stopSpeakingSet();
+  else if (tab === 'listening') stopListeningSet();
 }
 
 async function ensureSpeakingRun() {
@@ -356,6 +360,247 @@ export async function recordSpeaking(blob) {
   }
 }
 
+function setListeningFeedback(text, tone) {
+  const el = $('listening-result');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+  el.classList.remove('feedback-good', 'feedback-bad');
+  if (tone === 'good') el.classList.add('feedback-good');
+  if (tone === 'bad') el.classList.add('feedback-bad');
+}
+
+function setListeningRunActive(active) {
+  const launch = $('listening-launch');
+  if (launch) launch.hidden = active;
+  const custom = $('listening-custom');
+  if (custom) custom.disabled = active;
+}
+
+function clearListeningTrail() {
+  $('listening-trail-wrong').textContent = '';
+  $('listening-trail-right').textContent = '';
+  $('listening-trail-wrap').hidden = true;
+}
+
+function formatListeningAcceptable(acceptable) {
+  if (!acceptable?.length) return '—';
+  return acceptable.join(' · ');
+}
+
+function appendListeningTrail(prompt, answer, correct, acceptable) {
+  const trail = correct ? $('listening-trail-right') : $('listening-trail-wrong');
+  const item = document.createElement('div');
+  item.setAttribute('role', 'listitem');
+  item.className = 'grammar-trail-item ' + (correct ? 'good' : 'bad');
+  const task = document.createElement('p');
+  task.className = 'grammar-trail-prompt';
+  task.textContent = prompt;
+  task.title = prompt;
+  item.append(task);
+  const yours = answer.trim() || '—';
+  if (correct) {
+    item.append(grammarTrailLine('You', yours, 'yours'));
+  } else {
+    item.append(
+      grammarTrailLine('You', yours, 'yours-wrong'),
+      grammarTrailLine('Acceptable', formatListeningAcceptable(acceptable), 'expected'),
+    );
+  }
+  trail.append(item);
+  $('listening-trail-wrap').hidden = false;
+}
+
+function setListeningQuestionFeedback(block, ok, acceptable) {
+  if (!block) return;
+  let el = block.querySelector('.listening-q-feedback');
+  if (!el) {
+    el = document.createElement('p');
+    el.className = 'listening-q-feedback grammar-feedback';
+    el.setAttribute('role', 'status');
+    block.append(el);
+  }
+  el.hidden = false;
+  el.classList.remove('feedback-good', 'feedback-bad');
+  if (ok) {
+    el.textContent = 'Correct';
+    el.classList.add('feedback-good');
+  } else {
+    el.textContent = `Not quite. Acceptable: ${formatListeningAcceptable(acceptable)}`;
+    el.classList.add('feedback-bad');
+  }
+}
+
+function clearListeningCard() {
+  listeningQuestions = [];
+  listeningPassageText = '';
+  $('listening-card').hidden = true;
+  $('listening-meta').textContent = '';
+  $('listening-passage').textContent = '';
+  $('listening-passage').hidden = true;
+  $('listening-warning').hidden = true;
+  $('listening-warning').textContent = '';
+  $('listening-questions').textContent = '';
+  setListeningFeedback('', null);
+  const submit = $('listening-submit');
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Check answers';
+  }
+}
+
+export function stopListeningSet() {
+  listeningRun = null;
+  const done = $('listening-done');
+  done.hidden = true;
+  done.textContent = 'Finished. Start another set if you like.';
+  clearListeningCard();
+  clearListeningTrail();
+  setListeningRunActive(false);
+  endPracticeSession('listening');
+}
+
+function completeListeningSet(correct, total) {
+  listeningRun = null;
+  $('listening-card').hidden = true;
+  const done = $('listening-done');
+  done.hidden = false;
+  done.textContent = correct === total
+    ? `All ${total} correct. Start another set if you like.`
+    : `${correct} / ${total} correct. Start another set if you like.`;
+  setListeningRunActive(false);
+  stopPracticeTimer();
+  setPracticeProgress('listening', total, total);
+}
+
+async function beginListening(start) {
+  listeningRun = start.runId;
+  listeningPassageText = start.passage || '';
+  const total = start.questions?.length || 3;
+  resetPracticeStats('listening', total);
+  startPracticeTimedSession('listening', total);
+  $('listening-done').hidden = true;
+  clearListeningTrail();
+  setListeningRunActive(true);
+  $('listening-card').hidden = false;
+  $('listening-warning').hidden = !start.warning;
+  $('listening-warning').textContent = start.warning || '';
+  $('listening-passage').textContent = listeningPassageText;
+  $('listening-passage').hidden = true;
+  renderListeningQuestions(start.questions);
+  setListeningFeedback('', null);
+  await speakPhrase(listeningPassageText);
+}
+
+export async function openListeningGenerated() {
+  listeningRun = null;
+  $('listening-done').hidden = true;
+  try {
+    const start = await api.listeningStart();
+    await beginListening(start);
+  } catch (e) {
+    setListeningRunActive(false);
+    $('listening-card').hidden = false;
+    $('listening-passage').hidden = false;
+    $('listening-passage').textContent = e.message;
+    setListeningFeedback('', null);
+  }
+}
+
+export async function openListeningCustom() {
+  const text = $('listening-custom').value.trim();
+  if (!text) return;
+  listeningRun = null;
+  $('listening-done').hidden = true;
+  try {
+    const start = await api.listeningCustom(text);
+    await beginListening(start);
+  } catch (e) {
+    setListeningRunActive(false);
+    $('listening-card').hidden = false;
+    $('listening-passage').hidden = false;
+    $('listening-passage').textContent = e.message;
+    setListeningFeedback('', null);
+  }
+}
+
+function renderListeningQuestions(questions) {
+  listeningQuestions = questions || [];
+  const wrap = $('listening-questions');
+  wrap.textContent = '';
+  const total = listeningQuestions.length || 3;
+  $('listening-meta').textContent = `${total} question${total === 1 ? '' : 's'} · short answer (a word or phrase)`;
+  setPracticeProgress('listening', 0, total);
+  $('listening-submit').disabled = !listeningQuestions.length;
+  for (let i = 0; i < listeningQuestions.length; i++) {
+    const q = listeningQuestions[i];
+    const block = document.createElement('div');
+    block.className = 'listening-q';
+    const label = document.createElement('label');
+    const span = document.createElement('span');
+    span.className = 'listening-q-label';
+    span.textContent = `${i + 1}. ${q.question}`;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 500;
+    input.dataset.index = String(i);
+    input.className = 'grammar-answer-input listening-answer';
+    input.placeholder = 'Short answer';
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitListening();
+      }
+    });
+    label.append(span, input);
+    block.append(label);
+    wrap.append(block);
+  }
+}
+
+export async function submitListening() {
+  if (!listeningRun) return;
+  const inputs = [...document.querySelectorAll('.listening-answer')];
+  const answers = inputs.map((n) => n.value);
+  try {
+    const result = await api.listeningSubmit(listeningRun, answers);
+    clearListeningTrail();
+    let allCorrect = true;
+    for (let i = 0; i < result.results.length; i++) {
+      const ok = result.results[i];
+      if (!ok) allCorrect = false;
+      const q = listeningQuestions[i];
+      const prompt = q?.question ?? `Question ${i + 1}`;
+      appendListeningTrail(prompt, answers[i] ?? '', ok, q?.acceptable);
+      const block = inputs[i]?.closest('.listening-q');
+      setListeningQuestionFeedback(block, ok, q?.acceptable);
+      const input = inputs[i];
+      if (!input) continue;
+      input.classList.remove('answer-good', 'answer-wrong');
+      input.classList.add(ok ? 'answer-good' : 'answer-wrong');
+      input.disabled = ok;
+    }
+    const mistakes = result.total - result.correct;
+    setPracticeScore('listening', result.correct, mistakes, result.correct, result.total);
+    const submit = $('listening-submit');
+    if (allCorrect) {
+      setListeningFeedback('All correct.', 'good');
+      if (submit) submit.disabled = true;
+      completeListeningSet(result.correct, result.total);
+      return;
+    }
+    setListeningFeedback('Fix answers marked below, then check again.', 'bad');
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Check again';
+    }
+    const next = inputs.find((n) => !n.disabled);
+    next?.focus();
+  } catch (e) {
+    setListeningFeedback(e.message, 'bad');
+  }
+}
+
 export function wirePracticeControls() {
   $('grammar-start').addEventListener('click', () => openGrammar());
   $('grammar-submit').addEventListener('click', () => submitGrammar());
@@ -371,6 +616,13 @@ export function wirePracticeControls() {
     const phrase = $('speaking-phrase').textContent;
     if (phrase) speakPhrase(phrase);
   });
+  $('listening-generated').addEventListener('click', () => openListeningGenerated());
+  $('listening-custom-go').addEventListener('click', () => openListeningCustom());
+  $('listening-replay').addEventListener('click', () => {
+    if (listeningPassageText) speakPhrase(listeningPassageText);
+  });
+  $('listening-submit').addEventListener('click', () => submitListening());
+
   const recordBtn = $('speaking-record');
 
   function setSpeakingRecording(on) {
