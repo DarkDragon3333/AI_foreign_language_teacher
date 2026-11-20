@@ -1,4 +1,4 @@
-import { api, downloadAnki } from './api.js?v=16';
+import { api, downloadAnki } from './api.js?v=19';
 import { setPracticeProgress } from './practice-ui.js?v=1';
 
 const $ = (id) => document.getElementById(id);
@@ -89,6 +89,11 @@ async function answer(rating) {
     if (index >= queue.length) index = 0;
     showCurrent();
     await refreshReviewCount();
+    if (queue.length === 0) {
+      api.completeSchedule('review')
+        .then(() => window.dispatchEvent(new CustomEvent('schedule-refresh')))
+        .catch(() => { /* today's plan may be a different activity */ });
+    }
   } catch (e) {
     status.hidden = false;
     status.classList.add('error');

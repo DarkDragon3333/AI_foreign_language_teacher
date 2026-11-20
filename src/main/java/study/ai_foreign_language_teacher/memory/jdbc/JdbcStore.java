@@ -12,6 +12,7 @@ import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
+import study.ai_foreign_language_teacher.domain.StructuredPlanState;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -59,7 +60,8 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
             instant(rs, "started_at"),
             instant(rs, "ended_at"),
             rs.getString("model"),
-            readSummary(rs));
+            readSummary(rs),
+            readPlanState(rs));
 
     private static final RowMapper<ChatMessage> MESSAGE = (rs, i) -> new ChatMessage(
             rs.getLong("id"),
@@ -116,6 +118,18 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
         }
     }
 
+    private StructuredPlanState readPlanState(ResultSet rs) throws SQLException {
+        String json = rs.getString("plan_state");
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(json, StructuredPlanState.class);
+        } catch (JacksonException e) {
+            return null;
+        }
+    }
+
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         Timestamp ts = rs.getTimestamp(column);
         return ts == null ? null : ts.toInstant();
@@ -165,17 +179,29 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
     // ---- сессии ----
 
     @Override
-    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model) {
+    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model,
+                                StructuredPlanState planState) {
+        String planJson = planState == null ? null : mapper.writeValueAsString(planState);
         return jdbc.sql("""
-                        INSERT INTO sessions (user_id, mode, topic, cefr_snapshot, model)
-                        VALUES (:userId, :mode, :topic, :cefr, :model)
+                        INSERT INTO sessions (user_id, mode, topic, cefr_snapshot, model, plan_state)
+                        VALUES (:userId, :mode, :topic, :cefr, :model, CAST(:planState AS jsonb))
                         RETURNING *""")
                 .param("model", model, java.sql.Types.VARCHAR)
+                .param("planState", planJson, java.sql.Types.VARCHAR)
                 .param("userId", userId)
                 .param("mode", mode.name())
                 .param("topic", topic)
                 .param("cefr", cefr.name())
                 .query(sessionMapper).single();
+    }
+
+    @Override
+    public void updatePlanState(long id, StructuredPlanState planState) {
+        String json = planState == null ? null : mapper.writeValueAsString(planState);
+        jdbc.sql("UPDATE sessions SET plan_state = CAST(:planState AS jsonb) WHERE id = :id")
+                .param("planState", json, java.sql.Types.VARCHAR)
+                .param("id", id)
+                .update();
     }
 
     @Override
@@ -271,6 +297,20 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
     public int countUserTurns(long sessionId) {
         Integer count = jdbc.sql("SELECT COUNT(*) FROM messages WHERE session_id = :sessionId AND role = 'USER'")
                 .param("sessionId", sessionId)
+                .query(Integer.class).single();
+        return count == null ? 0 : count;
+    }
+
+    @Override
+    public int countUserTurnsSince(long sessionId, Instant since) {
+        if (since == null) {
+            return countUserTurns(sessionId);
+        }
+        Integer count = jdbc.sql("""
+                        SELECT COUNT(*) FROM messages
+                        WHERE session_id = :sessionId AND role = 'USER' AND created_at >= :since""")
+                .param("sessionId", sessionId)
+                .param("since", Timestamp.from(since))
                 .query(Integer.class).single();
         return count == null ? 0 : count;
     }

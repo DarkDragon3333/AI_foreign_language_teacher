@@ -3,8 +3,11 @@ package study.ai_foreign_language_teacher.llm;
 import org.springframework.stereotype.Component;
 import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
+import study.ai_foreign_language_teacher.domain.LessonPhase;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.LessonMode;
+import study.ai_foreign_language_teacher.domain.StructuredPlanState;
+import study.ai_foreign_language_teacher.session.StructuredLessonPhases;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.RoleScenario;
 import study.ai_foreign_language_teacher.domain.RuleCard;
@@ -16,6 +19,7 @@ import study.ai_foreign_language_teacher.session.ScenarioService;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -125,9 +129,45 @@ public class PromptBuilder {
                 Bad: answer_en = "I like to play football with my friends." (it only repeats the learner)
                 Bad: answer_ru that stops before the question, or follow_up_ru left empty while follow_up_question is filled.
                 """);
+        sb.append(structuredLessonBlock(session));
         sb.append("\nSUPPORT\n").append(supportRule(session.supportLevel(), stuck));
         sb.append("\nAnswer with one JSON object only, following the given schema.\n");
         return sb.toString();
+    }
+
+    String structuredLessonBlock(LessonSession session) {
+        if (session.mode() != LessonMode.STRUCTURED) {
+            return "";
+        }
+        StructuredPlanState plan = session.planState();
+        if (plan == null) {
+            return "";
+        }
+        LessonPhase phase = plan.phase();
+        int remaining = StructuredLessonPhases.minutesRemaining(plan.targetMinutes(), session.startedAt(), Instant.now());
+        String phaseRules = switch (phase) {
+            case WARMUP -> """
+                    WARM-UP: light chat on the topic. One or two easy questions. Correct only major errors that block understanding.
+                    """;
+            case INPUT -> """
+                    INPUT: teach one focused point (use retrieved rule cards if present). Brief rule, one good example, one bad example.
+                    Do not assign long exercises yet.
+                    """;
+            case PRACTICE -> """
+                    PRACTICE: one small drill task per turn. Check the learner's answer, give short feedback, then give the next small task in follow_up_question.
+                    """;
+            case FEEDBACK -> """
+                    FEEDBACK: summarize what went well and 1-2 weak points. No new exercises or drill tasks.
+                    In follow_up_question, suggest wrapping up (e.g. they can end the lesson when ready).
+                    """;
+        };
+        return """
+
+                STRUCTURED LESSON
+                Target length: %d minutes. About %d minutes left. Current phase: %s (%s).
+                Follow this phase only; ignore other mode wording if it conflicts.
+                %s
+                """.formatted(plan.targetMinutes(), remaining, phase.json(), phase.label(), phaseRules);
     }
 
     String rolePlay(LessonSession session, long sessionId) {

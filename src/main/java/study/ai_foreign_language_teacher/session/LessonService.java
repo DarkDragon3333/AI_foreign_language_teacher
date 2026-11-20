@@ -56,11 +56,12 @@ public class LessonService {
     private final TutorProperties props;
     private final ScenarioService scenarios;
     private final ScheduleService schedule;
+    private final StructuredLessonService structured;
 
     public LessonService(ProfileRepository profiles, SessionRepository sessions, MessageRepository messages,
                          ErrorRepository errors, TurnEngine engine, ReviewService reviews, LlmClient llm,
                          ObjectMapper mapper, TutorProperties props, ScenarioService scenarios,
-                         ScheduleService schedule) {
+                         ScheduleService schedule, StructuredLessonService structured) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.messages = messages;
@@ -72,9 +73,10 @@ public class LessonService {
         this.props = props;
         this.scenarios = scenarios;
         this.schedule = schedule;
+        this.structured = structured;
     }
 
-    public LessonSession startSession(String cefr, String topic, String mode, String model) {
+    public LessonSession startSession(String cefr, String topic, String mode, String model, Integer durationMin) {
         UserProfile profile = profiles.getOrCreateDefault();
         Cefr level = cefr == null || cefr.isBlank() ? profile.cefr() : Cefr.parse(cefr);
         String cleanTopic = topic == null || topic.isBlank() ? null : topic.strip();
@@ -86,17 +88,27 @@ public class LessonService {
             throw new IllegalArgumentException("Model " + cleanModel + " is not installed in Ollama");
         }
         LessonMode lessonMode = LessonMode.parse(mode);
+        if (lessonMode == LessonMode.STRUCTURED && durationMin == null) {
+            throw new IllegalArgumentException("durationMin is required for structured mode (15 or 25)");
+        }
         if (lessonMode == LessonMode.ROLEPLAY) {
             if (cleanTopic == null) {
                 throw new IllegalArgumentException("Choose a scenario (topic = scenario slug) for roleplay mode");
             }
             scenarios.findForStart(cleanTopic);
         }
-        LessonSession session = sessions.create(profile.id(), lessonMode, cleanTopic, level, cleanModel);
+        var plan = lessonMode == LessonMode.STRUCTURED
+                ? structured.initPlan(durationMin, java.time.Instant.now())
+                : null;
+        LessonSession session = sessions.create(profile.id(), lessonMode, cleanTopic, level, cleanModel, plan);
         if (lessonMode == LessonMode.ROLEPLAY) {
             scenarios.start(session.id(), cleanTopic);
         }
         return session;
+    }
+
+    public StructuredLessonService.PhaseView phaseView(LessonSession session) {
+        return structured.view(session).orElse(null);
     }
 
     public LessonSession getSession(long id) {
@@ -191,6 +203,8 @@ public class LessonService {
         } else if (hintRequested) {
             userMessage = messages.add(sessionId, Role.USER, "I need a hint, please.", null);
         }
+
+        session = structured.syncPhase(getSession(sessionId));
 
         UserProfile profile = profiles.getOrCreateDefault();
         List<ChatMessage> history = messages.lastN(sessionId, props.lesson().historyMessages());

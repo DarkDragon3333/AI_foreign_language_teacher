@@ -1,4 +1,4 @@
-import { api, speak } from './api.js?v=18';
+import { api, speak } from './api.js?v=19';
 import {
   bumpPracticeAnswer,
   endPracticeSession,
@@ -12,12 +12,21 @@ import {
 const $ = (id) => document.getElementById(id);
 let grammarRun = null;
 let grammarCurrent = null;
+let grammarAnswered = 0;
 let speakingRun = null;
 let speakingPhraseIndex = 0;
+let speakingDonePhrases = 0;
 let listeningRun = null;
+let listeningChecked = false;
 let listeningQuestions = [];
 let listeningPassageText = '';
 const SPEAKING_SET_SIZE = 6;
+
+function markToday(activity) {
+  api.completeSchedule(activity)
+    .then(() => window.dispatchEvent(new CustomEvent('schedule-refresh')))
+    .catch(() => { /* today's plan may be a different activity */ });
+}
 const speakRec = { recorder: null, chunks: [], stream: null, startedAt: 0, timer: null, arming: false };
 
 function resetSpeakingRecordUi() {
@@ -115,6 +124,8 @@ function appendGrammarTrail(prompt, answer, correct, expected) {
 }
 
 export function stopGrammarSet() {
+  const answered = grammarAnswered;
+  grammarAnswered = 0;
   grammarRun = null;
   $('grammar-exercise').hidden = true;
   $('grammar-done').hidden = true;
@@ -124,6 +135,7 @@ export function stopGrammarSet() {
   setGrammarRunActive(false);
   clearGrammarTrail();
   endPracticeSession('grammar');
+  if (answered > 0) markToday('grammar');
 }
 
 export async function openGrammar() {
@@ -143,6 +155,7 @@ export async function openGrammar() {
     const random = $('grammar-random').checked;
     const start = await api.grammarStart({ types, random });
     grammarRun = start.runId;
+    grammarAnswered = 0;
     startPracticeTimedSession('grammar', 6);
     setGrammarRunActive(true);
     renderGrammar(start.current);
@@ -184,6 +197,7 @@ export async function submitGrammar() {
   const prompt = grammarCurrent?.prompt ?? $('grammar-prompt').textContent;
   try {
     const result = await api.grammarAnswer(grammarRun, answer);
+    grammarAnswered += 1;
     appendGrammarTrail(prompt, answer, result.correct, result.expected);
     setGrammarFeedback(
       result.correct ? 'Correct' : `Not quite. Expected: ${result.expected}`,
@@ -200,6 +214,8 @@ export async function submitGrammar() {
       setGrammarFeedback('Set complete.', 'good');
       stopPracticeTimer();
       setPracticeProgress('grammar', 6, 6);
+      grammarAnswered = 0;
+      markToday('grammar');
       return;
     }
     renderGrammar(result.next);
@@ -232,6 +248,8 @@ function clearSpeakingCard() {
 }
 
 export function stopSpeakingSet() {
+  const donePhrases = speakingDonePhrases;
+  speakingDonePhrases = 0;
   abortSpeakingRecord();
   speakingRun = null;
   speakingPhraseIndex = 0;
@@ -239,9 +257,11 @@ export function stopSpeakingSet() {
   clearSpeakingCard();
   setSpeakingRunActive(false);
   endPracticeSession('speaking');
+  if (donePhrases > 0) markToday('speaking');
 }
 
 function finishSpeakingSet() {
+  speakingDonePhrases = 0;
   abortSpeakingRecord();
   speakingRun = null;
   speakingPhraseIndex = 0;
@@ -250,6 +270,7 @@ function finishSpeakingSet() {
   setSpeakingRunActive(false);
   stopPracticeTimer();
   setPracticeProgress('speaking', SPEAKING_SET_SIZE, SPEAKING_SET_SIZE);
+  markToday('speaking');
 }
 
 export function stopActivePractice(tab) {
@@ -279,6 +300,7 @@ export async function startSpeakingSet() {
   abortSpeakingRecord();
   speakingRun = null;
   speakingPhraseIndex = 0;
+  speakingDonePhrases = 0;
   $('speaking-done').hidden = true;
   clearSpeakingCard();
   setSpeakingRunActive(false);
@@ -341,6 +363,7 @@ export async function recordSpeaking(blob) {
       list.append(row);
     }
     if (!(data.mismatches || []).length) {
+      speakingDonePhrases += 1;
       bumpPracticeAnswer('speaking', true, { done: speakingPhraseIndex, total: SPEAKING_SET_SIZE });
       if (speakingPhraseIndex >= SPEAKING_SET_SIZE) {
         finishSpeakingSet();
@@ -450,6 +473,8 @@ function clearListeningCard() {
 }
 
 export function stopListeningSet() {
+  const checked = listeningChecked;
+  listeningChecked = false;
   listeningRun = null;
   const done = $('listening-done');
   done.hidden = true;
@@ -458,9 +483,11 @@ export function stopListeningSet() {
   clearListeningTrail();
   setListeningRunActive(false);
   endPracticeSession('listening');
+  if (checked) markToday('listening');
 }
 
 function completeListeningSet(correct, total) {
+  listeningChecked = false;
   listeningRun = null;
   $('listening-card').hidden = true;
   const done = $('listening-done');
@@ -471,9 +498,11 @@ function completeListeningSet(correct, total) {
   setListeningRunActive(false);
   stopPracticeTimer();
   setPracticeProgress('listening', total, total);
+  markToday('listening');
 }
 
 async function beginListening(start) {
+  listeningChecked = false;
   listeningRun = start.runId;
   listeningPassageText = start.passage || '';
   const total = start.questions?.length || 3;
@@ -564,6 +593,7 @@ export async function submitListening() {
   const answers = inputs.map((n) => n.value);
   try {
     const result = await api.listeningSubmit(listeningRun, answers);
+    listeningChecked = true;
     clearListeningTrail();
     let allCorrect = true;
     for (let i = 0; i < result.results.length; i++) {

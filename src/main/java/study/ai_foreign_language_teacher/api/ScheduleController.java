@@ -1,6 +1,7 @@
 package study.ai_foreign_language_teacher.api;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import study.ai_foreign_language_teacher.api.Dto.CompleteActivityRequest;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleSlotPatch;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleWeekView;
 import study.ai_foreign_language_teacher.api.Dto.StudyWeekdaysRequest;
@@ -49,5 +51,17 @@ public class ScheduleController {
         ActivityType type = body == null || body.activityType() == null ? null : ActivityType.parse(body.activityType());
         SlotStatus status = body == null || body.status() == null ? null : SlotStatus.parse(body.status());
         return schedule.patchSlot(date, type, status);
+    }
+
+    @PostMapping("/complete")
+    public ResponseEntity<ScheduleService.SlotView> complete(@RequestBody(required = false) CompleteActivityRequest body) {
+        if (body == null || body.activityType() == null || body.activityType().isBlank()) {
+            throw new IllegalArgumentException("activityType is required");
+        }
+        ScheduleService.SlotView view = schedule.completeToday(ActivityType.parse(body.activityType()));
+        if (view == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(view);
     }
 }

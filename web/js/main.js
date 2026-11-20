@@ -1,8 +1,8 @@
-import { api, chatTurn, transcribe } from './api.js?v=18';
+import { api, chatTurn, transcribe } from './api.js?v=19';
 import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=18';
-import { openReview, refreshReviewCount } from './review.js?v=18';
+import { openReview, refreshReviewCount } from './review.js?v=19';
 import { VoiceDuplex } from './voice.js?v=18';
-import { stopActivePractice, wirePracticeControls } from './practice.js?v=30';
+import { stopActivePractice, wirePracticeControls } from './practice.js?v=31';
 import { enterPracticeScreen, focusPracticeTab, pausePracticeScreen } from './practice-ui.js?v=2';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -16,6 +16,7 @@ const LEVELS_INFO = {
 };
 const MODE_NAMES = {
   conversation: 'Conversation', explain: 'Explain', correct: 'Check', drill: 'Drill', roleplay: 'Role-play',
+  structured: 'Guided lesson',
 };
 const MODE_HEADINGS = {
   conversation: 'Start a conversation',
@@ -23,7 +24,9 @@ const MODE_HEADINGS = {
   correct: 'Check my English',
   drill: 'A short drill',
   roleplay: 'Play a scene',
+  structured: 'Guided lesson',
 };
+const STRUCTURED_PHASES = ['warmup', 'input', 'practice', 'feedback'];
 const HINT_STEPS = ['· rule', '· example', '· answer', '· answer'];
 const C_LEVEL_NOTE = 'At C1 and C2 this small local model writes more simply than a human teacher. Nuance and idioms are weaker.';
 const PRACTICE_STEPS = 6;
@@ -52,15 +55,15 @@ const state = {
   lessonTimerMs: 0,
 };
 
-const CRUMBS = {
-  learn: ['Learn', 'Overview'],
-  levels: ['Learn', 'Levels'],
-  journal: ['Learn', 'Progress'],
-  review: ['Learn', 'Practice'],
-  lesson: ['Learn', 'Practice'],
-  grammar: ['Learn', 'Grammar'],
-  speaking: ['Learn', 'Speaking'],
-  listening: ['Learn', 'Listening'],
+const TAB_TITLES = {
+  learn: 'Home',
+  levels: 'Levels',
+  journal: 'Progress',
+  review: 'Useful words',
+  lesson: 'Lesson',
+  grammar: 'Grammar drills',
+  speaking: 'Speaking',
+  listening: 'Listen & learn',
 };
 const PRACTICE_TABS = new Set(['grammar', 'speaking', 'listening', 'review']);
 
@@ -115,6 +118,36 @@ async function refreshGoal() {
   }
 }
 
+function localIsoDate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+const TODAY_OPEN = {
+  grammar: { tab: 'grammar', label: 'Open grammar' },
+  speaking: { tab: 'speaking', label: 'Open speaking' },
+  listening: { tab: 'listening', label: 'Open listening' },
+  review: { tab: 'review', label: 'Open review' },
+  conversation: { tab: null, label: 'Open chat' },
+};
+
+function todayPlanHint(slot) {
+  const name = ACTIVITY_NAMES[slot.activityType] || slot.activityType;
+  if (slot.activityType === 'conversation') {
+    return `Today: ${name}. Start it with Continue lesson in the card above.`;
+  }
+  return `Today: ${name}. Open the drill — it is not in the teacher chat above.`;
+}
+
+function focusConversationStart() {
+  showTab('learn');
+  $('mode').value = 'conversation';
+  $('mode').dispatchEvent(new Event('change'));
+  document.querySelector('.hero')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 async function loadSchedule() {
   try {
     const week = await api.scheduleWeek();
@@ -124,7 +157,13 @@ async function loadSchedule() {
     }
     const list = $('week-slots');
     list.textContent = '';
+    const today = localIsoDate();
+    let todayPlanned = null;
+    const activeDays = new Set(state.studyWeekdays);
     for (const slot of week.slots || []) {
+      const jsDow = new Date(slot.date + 'T12:00:00').getDay();
+      const isoDow = jsDow === 0 ? 7 : jsDow;
+      if (!activeDays.has(isoDow)) continue;
       const li = document.createElement('li');
       const label = document.createElement('span');
       label.className = 'slot-date';
@@ -141,13 +180,36 @@ async function loadSchedule() {
       }
       select.disabled = slot.status !== 'planned';
       select.addEventListener('change', () => {
-        api.patchScheduleSlot(slot.date, { activityType: select.value }).catch((e) => fatal(e.message));
+        api.patchScheduleSlot(slot.date, { activityType: select.value }).then(() => loadSchedule()).catch((e) => fatal(e.message));
       });
+      const end = document.createElement('span');
+      end.className = 'slot-end';
+      if (slot.date === today && slot.status === 'planned') {
+        todayPlanned = slot;
+        const open = TODAY_OPEN[slot.activityType];
+        if (open) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'slot-open';
+          button.textContent = open.label;
+          button.addEventListener('click', () => {
+            if (open.tab) showTab(open.tab);
+            else focusConversationStart();
+          });
+          end.append(button);
+        }
+      }
       const status = document.createElement('span');
       status.className = 'slot-status';
       status.textContent = STATUS_NAMES[slot.status] || slot.status;
-      li.append(label, select, status);
+      end.append(status);
+      li.append(label, select, end);
       list.append(li);
+    }
+    const hint = $('today-plan-hint');
+    if (hint) {
+      hint.hidden = !todayPlanned;
+      hint.textContent = todayPlanned ? todayPlanHint(todayPlanned) : '';
     }
   } catch {
     $('week-slots').textContent = '';
@@ -270,6 +332,11 @@ function progressCounts() {
   if (state.session?.mode === 'roleplay' && state.scenarioProgress?.total) {
     return { done: state.scenarioProgress.done, total: state.scenarioProgress.total };
   }
+  if (state.session?.mode === 'structured' && state.session.lessonPhase) {
+    const idx = STRUCTURED_PHASES.indexOf(state.session.lessonPhase);
+    const done = idx >= 0 ? idx + 1 : 1;
+    return { done, total: STRUCTURED_PHASES.length };
+  }
   const turns = state.session ? userTurnCount() : 0;
   return { done: Math.min(turns, PRACTICE_STEPS), total: PRACTICE_STEPS };
 }
@@ -277,6 +344,9 @@ function progressCounts() {
 function progressLabel(counts) {
   if (state.session?.mode === 'roleplay' && state.scenarioProgress) {
     return counts.done + ' of ' + counts.total + ' goals';
+  }
+  if (state.session?.mode === 'structured') {
+    return 'Phase ' + counts.done + ' of ' + counts.total;
   }
   return 'Lesson ' + counts.done + ' of ' + counts.total;
 }
@@ -441,17 +511,58 @@ function renderDashboard() {
 
 function syncModePills() {
   const mode = $('mode').value;
-  for (const button of $('mode-pills').querySelectorAll('[data-mode]')) {
+  const form = $('start-form');
+  if (!form) return;
+  for (const button of form.querySelectorAll('[data-mode]')) {
     button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
   }
 }
 
+function selectedDurationMin() {
+  const checked = document.querySelector('input[name="duration"]:checked');
+  return checked ? Number(checked.value) : 15;
+}
+
+const SECONDARY_LESSON_MODES = new Set(['explain', 'correct', 'drill', 'roleplay']);
+
 function syncStartForm() {
-  const roleplay = $('mode').value === 'roleplay';
+  const mode = $('mode').value;
+  const roleplay = mode === 'roleplay';
+  const structured = mode === 'structured';
   $('scenario-wrap').hidden = !roleplay;
   $('topic-wrap').hidden = roleplay;
+  const guided = $('structured-options');
+  if (guided) guided.hidden = !structured;
+  const more = $('lesson-mode-more');
+  if (more) more.open = SECONDARY_LESSON_MODES.has(mode);
   syncModePills();
   if (!state.session) renderHeroCopy();
+}
+
+function updateStructuredPanel(session) {
+  const wrap = $('structured-phase-wrap');
+  if (!wrap) return;
+  const on = session?.mode === 'structured';
+  wrap.hidden = !on;
+  if (!on) return;
+  const phase = session.lessonPhase || 'warmup';
+  for (const seg of wrap.querySelectorAll('.structured-phase-seg')) {
+    seg.classList.toggle('is-current', seg.dataset.phase === phase);
+  }
+  const left = $('structured-time-left');
+  if (left) {
+    const mins = session.minutesRemaining;
+    const label = session.phaseLabel || phase;
+    if (session.lessonPhase === 'feedback') {
+      left.textContent = mins != null
+        ? `Feedback · about ${mins} min left — you can wrap up when ready.`
+        : 'Feedback — you can wrap up when ready.';
+    } else {
+      left.textContent = mins != null
+        ? `${label} · about ${mins} min left in the lesson`
+        : label;
+    }
+  }
 }
 
 async function loadScenarios() {
@@ -474,9 +585,6 @@ async function loadScenarios() {
 // ---------- разделы ----------
 
 function updateChrome() {
-  const [a, b] = CRUMBS[state.tab] || CRUMBS.learn;
-  $('crumb-a').textContent = a;
-  $('crumb-b').textContent = b;
   const inLesson = state.tab === 'lesson';
   const inPractice = PRACTICE_TABS.has(state.tab);
   $('exit-lesson').hidden = !inLesson;
@@ -484,7 +592,7 @@ function updateChrome() {
   const stopBtn = $('stop-practice');
   stopBtn.hidden = !inPractice || inLesson || state.tab === 'review';
   $('range-label').hidden = inLesson;
-  document.title = b + ' · English learning';
+  document.title = (TAB_TITLES[state.tab] || TAB_TITLES.learn) + ' · English learning';
   const nav = state.tab === 'journal' ? 'journal' : state.tab === 'levels' ? 'levels' : 'learn';
   for (const name of ['learn', 'levels', 'journal']) {
     const button = $('nav-' + name);
@@ -581,7 +689,9 @@ async function beginLesson(opts = {}) {
   try {
     await api.updateProfile({ cefr: level });
     state.level = level;
-    const session = await api.startSession({ cefr: level, topic, mode });
+    const payload = { cefr: level, topic, mode };
+    if (mode === 'structured') payload.durationMin = selectedDurationMin();
+    const session = await api.startSession(payload);
     state.history = [];
     state.scenarioProgress = null;
     resetLessonClock(session.id);
@@ -627,9 +737,10 @@ $('exit-practice').addEventListener('click', () => {
 $('stop-practice').addEventListener('click', () => stopActivePractice(state.tab));
 $('resume-lesson').addEventListener('click', () => resumeLesson());
 
-$('mode-pills').addEventListener('click', (event) => {
+$('start-form').addEventListener('click', (event) => {
   const button = event.target.closest('[data-mode]');
   if (!button) return;
+  event.preventDefault();
   $('mode').value = button.dataset.mode;
   $('mode').dispatchEvent(new Event('change'));
 });
@@ -787,6 +898,7 @@ function showLesson(session, messages) {
   showTab('lesson');
   applySession(session);
   if (session.mode === 'roleplay') refreshScenarioPanel();
+  else updateStructuredPanel(session);
   syncVoiceControls();
   updateLessonStats();
   scrollDown();
@@ -837,7 +949,10 @@ function applySession(session) {
   $('lesson-heading').textContent = heroTitle(session);
   $('lesson-lede').textContent = session.mode === 'roleplay'
     ? 'Stay in the scene. A goal ticks off when your line includes the cue.'
-    : 'Write the next line in English, or press Speak.';
+    : session.mode === 'structured'
+      ? 'Follow the phase: warm-up, input, practice, then feedback.'
+      : 'Write the next line in English, or press Speak.';
+  updateStructuredPanel(session);
   $('hint-level').textContent = HINT_STEPS[Math.min(session.supportLevel, 3)];
   const index = LEVELS.indexOf(session.cefr);
   $('easier').disabled = state.busy || index <= 0;
@@ -1168,6 +1283,7 @@ function fatal(message) {
 }
 
 async function boot() {
+  window.addEventListener('schedule-refresh', () => loadSchedule());
   refreshHealth();
   setInterval(refreshHealth, 30000);
   setInterval(() => { if (state.tab === 'learn' || state.tab === 'lesson') refreshGoal(); }, 30000);

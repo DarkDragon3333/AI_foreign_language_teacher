@@ -4,13 +4,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public final class SpeakingPhraseSchema {
+public final class SpeakingPhrasesSchema {
 
-    private SpeakingPhraseSchema() {
+    private SpeakingPhrasesSchema() {
     }
 
     public static Map<String, Object> schema() {
-        return object(props("phrase", string()));
+        return object(props("phrases", Map.of("type", "array", "items", string())));
     }
 
     private static Map<String, Object> string() {

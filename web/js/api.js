@@ -22,6 +22,7 @@ export const api = {
   scheduleWeek: () => request('GET', '/api/schedule/week'),
   scheduleWeekdays: (days) => request('PATCH', '/api/schedule/weekdays', { days }),
   patchScheduleSlot: (date, patch) => request('PATCH', `/api/schedule/slots?date=${encodeURIComponent(date)}`, patch),
+  completeSchedule: (activityType) => request('POST', '/api/schedule/complete', { activityType }),
   insights: (limit = 5) => request('GET', `/api/insights?limit=${limit}`),
   revisePlan: () => request('POST', '/api/insights/plan'),
   grammarStart: (body) => request('POST', '/api/practice/grammar/start', body),

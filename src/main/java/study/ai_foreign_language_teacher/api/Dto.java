@@ -18,7 +18,7 @@ public final class Dto {
     private Dto() {
     }
 
-    public record StartSessionRequest(String cefr, String topic, String mode, String model) {
+    public record StartSessionRequest(String cefr, String topic, String mode, String model, Integer durationMin) {
     }
 
     public record ChatRequest(Long sessionId, String text, Boolean hint) {
@@ -48,10 +48,26 @@ public final class Dto {
     }
 
     public record SessionView(long id, String mode, String topic, String cefr, int supportLevel,
-                              Instant startedAt, Instant endedAt, String model, SessionSummaryView summary) {
+                              Instant startedAt, Instant endedAt, String model, SessionSummaryView summary,
+                              String lessonPhase, String phaseLabel, Integer minutesRemaining, Integer targetMinutes) {
         static SessionView of(LessonSession s) {
+            return of(s, null);
+        }
+
+        static SessionView of(LessonSession s, study.ai_foreign_language_teacher.session.StructuredLessonService.PhaseView phase) {
+            String lessonPhase = null;
+            String phaseLabel = null;
+            Integer minutesRemaining = null;
+            Integer targetMinutes = null;
+            if (phase != null) {
+                lessonPhase = phase.lessonPhase();
+                phaseLabel = phase.phaseLabel();
+                minutesRemaining = phase.minutesRemaining();
+                targetMinutes = phase.targetMinutes();
+            }
             return new SessionView(s.id(), s.mode().json(), s.topic(), s.cefr().name(), s.supportLevel(),
-                    s.startedAt(), s.endedAt(), s.model(), SessionSummaryView.of(s.summary()));
+                    s.startedAt(), s.endedAt(), s.model(), SessionSummaryView.of(s.summary()),
+                    lessonPhase, phaseLabel, minutesRemaining, targetMinutes);
         }
     }
 
@@ -99,6 +115,9 @@ public final class Dto {
     }
 
     public record ScheduleSlotPatch(String activityType, String status) {
+    }
+
+    public record CompleteActivityRequest(String activityType) {
     }
 
     public record InsightsView(int lessonCount, int totalMinutes, java.util.Map<String, Integer> modeMinutes,

@@ -6,7 +6,8 @@ import study.ai_foreign_language_teacher.domain.PracticeRun;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.llm.LlmClient;
 import study.ai_foreign_language_teacher.llm.LlmMessage;
-import study.ai_foreign_language_teacher.llm.SpeakingPhraseSchema;
+import study.ai_foreign_language_teacher.llm.LlmSpeakingPhrases;
+import study.ai_foreign_language_teacher.llm.SpeakingPhrasesSchema;
 import study.ai_foreign_language_teacher.memory.PracticeRunRepository;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
 import study.ai_foreign_language_teacher.speech.SttClient;
@@ -14,7 +15,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class SpeakingPracticeService {
@@ -34,7 +34,10 @@ public class SpeakingPracticeService {
         this.stt = stt;
     }
 
-    public record SpeakingState(String phrase, int attempts) {
+    public record SpeakingState(List<String> phrases, int index, int attempts) {
+        String currentPhrase() {
+            return phrases.get(index);
+        }
     }
 
     public record PhraseView(long runId, String phrase) {
@@ -45,53 +48,55 @@ public class SpeakingPracticeService {
 
     public PhraseView start() {
         UserProfile profile = profiles.getOrCreateDefault();
-        String phrase = generatePhrase(profile);
-        SpeakingState state = new SpeakingState(phrase, 0);
+        List<String> phrases = generatePhrases(profile);
+        SpeakingState state = new SpeakingState(phrases, 0, 0);
         PracticeRun run = runs.create(profile.id(), "speaking", profile.cefr().name(), write(state));
-        return new PhraseView(run.id(), phrase);
+        return new PhraseView(run.id(), phrases.getFirst());
     }
 
     public PhraseView nextPhrase(long runId) {
         PracticeRun run = runs.find(runId).orElseThrow(() -> new NotFoundException("Practice run " + runId));
-        UserProfile profile = profiles.getOrCreateDefault();
-        String phrase = generatePhrase(profile);
-        SpeakingState state = new SpeakingState(phrase, 0);
-        runs.save(new PracticeRun(run.id(), run.userId(), run.kind(), run.cefr(), write(state), run.startedAt(), null));
-        return new PhraseView(run.id(), phrase);
+        SpeakingState state = read(run.stateJson());
+        int nextIndex = state.index() + 1;
+        if (nextIndex >= state.phrases().size()) {
+            throw new IllegalArgumentException("Practice already finished");
+        }
+        SpeakingState next = new SpeakingState(state.phrases(), nextIndex, 0);
+        runs.save(new PracticeRun(run.id(), run.userId(), run.kind(), run.cefr(), write(next), run.startedAt(), null));
+        return new PhraseView(run.id(), state.phrases().get(nextIndex));
     }
 
     public GradeView grade(long runId, byte[] audio, String contentType) {
         PracticeRun run = runs.find(runId).orElseThrow(() -> new NotFoundException("Practice run " + runId));
         SpeakingState state = read(run.stateJson());
         String heard = stt.transcribe(audio, contentType, null);
-        List<SpeechAligner.WordMismatch> mismatches = SpeechAligner.compare(state.phrase(), heard);
-        SpeakingState next = new SpeakingState(state.phrase(), state.attempts() + 1);
-        Instant ended = mismatches.isEmpty() ? Instant.now() : null;
+        List<SpeechAligner.WordMismatch> mismatches = SpeechAligner.compare(state.currentPhrase(), heard);
+        boolean success = mismatches.isEmpty();
+        Instant ended = success && state.index() >= state.phrases().size() - 1 ? Instant.now() : null;
+        SpeakingState next = new SpeakingState(state.phrases(), state.index(), state.attempts() + 1);
         runs.save(new PracticeRun(run.id(), run.userId(), run.kind(), run.cefr(), write(next), run.startedAt(), ended));
         return new GradeView(heard, mismatches);
     }
 
-    private String generatePhrase(UserProfile profile) {
+    private List<String> generatePhrases(UserProfile profile) {
         if (!llm.status().up()) {
-            return switch (profile.cefr()) {
-                case A1, A2 -> "Good morning. How are you?";
-                case B1, B2 -> "I would like to book a table for two.";
-                default -> "The proposal raises several ethical concerns.";
-            };
+            return SpeakingPhraseSet.prepare(null, profile.cefr());
         }
-        String prompt = "Write one short natural English sentence for a learner at CEFR "
-                + profile.cefr() + ". No quotes, no explanation.";
+        String prompt = """
+                Write 6 different short natural English sentences for speaking practice at CEFR %s.
+                Each sentence must be unique (different topic or wording). No quotes, no numbering.
+                """.formatted(profile.cefr());
         try {
-            String raw = llm.chat(List.of(LlmMessage.user(prompt)), 0.5, SpeakingPhraseSchema.schema(), null);
-            Map<?, ?> map = mapper.readValue(raw, Map.class);
-            Object phrase = map.get("phrase");
-            if (phrase != null && !phrase.toString().isBlank()) {
-                return phrase.toString().strip();
+            String raw = llm.chat(List.of(LlmMessage.user(prompt)), 0.55, SpeakingPhrasesSchema.schema(), null);
+            LlmSpeakingPhrases parsed = mapper.readValue(raw, LlmSpeakingPhrases.class);
+            List<String> prepared = SpeakingPhraseSet.prepare(parsed.phrases(), profile.cefr());
+            if (prepared.size() >= SpeakingPhraseSet.SIZE) {
+                return prepared;
             }
         } catch (RuntimeException ignored) {
             /* fallback */
         }
-        return "Could you help me with this, please?";
+        return SpeakingPhraseSet.prepare(null, profile.cefr());
     }
 
     private String write(SpeakingState state) {

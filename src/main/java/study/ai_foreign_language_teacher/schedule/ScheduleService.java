@@ -53,8 +53,12 @@ public class ScheduleService {
         refresh(profile);
         LocalDate start = LocalDate.now().with(DayOfWeek.MONDAY);
         LocalDate end = start.plusDays(6);
-        List<SlotView> slots = schedule.between(profile.id(), start, end).stream().map(SlotView::of).toList();
-        return new WeekView(start, profile.studyWeekdays(), slots);
+        List<Integer> studyDays = profile.studyWeekdays();
+        List<SlotView> slots = schedule.between(profile.id(), start, end).stream()
+                .filter(s -> studyDays.contains(s.slotDate().getDayOfWeek().getValue()))
+                .map(SlotView::of)
+                .toList();
+        return new WeekView(start, studyDays, slots);
     }
 
     public WeekView updateWeekdays(List<Integer> days) {
@@ -83,6 +87,30 @@ public class ScheduleService {
         }
         return SlotView.of(schedule.find(profile.id(), date)
                 .orElseThrow(() -> new IllegalArgumentException("No slot on " + date)));
+    }
+
+    /**
+     * Ставит сегодняшний слот в Done, только если он ещё Planned и тип совпадает.
+     * Другой тип или уже закрытый день не меняет.
+     *
+     * @return текущий слот или null, если на сегодня слота нет
+     */
+    public SlotView completeToday(ActivityType type) {
+        if (type == null) {
+            throw new IllegalArgumentException("activityType is required");
+        }
+        UserProfile profile = profiles.getOrCreateDefault();
+        LocalDate today = LocalDate.now();
+        var found = schedule.find(profile.id(), today);
+        if (found.isEmpty()) {
+            return null;
+        }
+        ScheduleSlot slot = found.get();
+        if (slot.status() == SlotStatus.PLANNED && slot.activityType() == type) {
+            schedule.updateStatus(profile.id(), today, SlotStatus.DONE);
+            slot = schedule.find(profile.id(), today).orElse(slot);
+        }
+        return SlotView.of(slot);
     }
 
     public void onSessionEnded(LessonSession session) {

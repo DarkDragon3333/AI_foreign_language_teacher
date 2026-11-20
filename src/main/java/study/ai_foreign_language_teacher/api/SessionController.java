@@ -14,8 +14,10 @@ import study.ai_foreign_language_teacher.api.Dto.MessageView;
 import study.ai_foreign_language_teacher.api.Dto.SessionView;
 import study.ai_foreign_language_teacher.api.Dto.StartSessionRequest;
 import study.ai_foreign_language_teacher.domain.ChatMessage;
+import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
 import study.ai_foreign_language_teacher.session.LessonService;
+import study.ai_foreign_language_teacher.session.StructuredLessonService;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,28 +29,34 @@ public class SessionController {
 
     private final LessonService lessons;
     private final ObjectMapper mapper;
+    private final StructuredLessonService structured;
 
-    public SessionController(LessonService lessons, ObjectMapper mapper) {
+    public SessionController(LessonService lessons, ObjectMapper mapper, StructuredLessonService structured) {
         this.lessons = lessons;
         this.mapper = mapper;
+        this.structured = structured;
+    }
+
+    private SessionView view(LessonSession s) {
+        return SessionView.of(s, structured.view(s).orElse(null));
     }
 
     /** Начать урок. Все поля необязательны: уровень берётся из профиля, режим — conversation. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SessionView start(@RequestBody(required = false) StartSessionRequest request) {
-        StartSessionRequest r = request == null ? new StartSessionRequest(null, null, null, null) : request;
-        return SessionView.of(lessons.startSession(r.cefr(), r.topic(), r.mode(), r.model()));
+        StartSessionRequest r = request == null ? new StartSessionRequest(null, null, null, null, null) : request;
+        return view(lessons.startSession(r.cefr(), r.topic(), r.mode(), r.model(), r.durationMin()));
     }
 
     @GetMapping
     public List<SessionView> recent() {
-        return lessons.recentSessions(20).stream().map(SessionView::of).toList();
+        return lessons.recentSessions(20).stream().map(this::view).toList();
     }
 
     @GetMapping("/{id}")
     public SessionView get(@PathVariable long id) {
-        return SessionView.of(lessons.getSession(id));
+        return view(lessons.getSession(id));
     }
 
     @GetMapping("/{id}/messages")
@@ -59,12 +67,12 @@ public class SessionController {
     /** Слайдер уровня и кнопки «проще / сложнее» меняют CEFR текущего урока. */
     @PutMapping("/{id}/level")
     public SessionView level(@PathVariable long id, @RequestBody LevelRequest request) {
-        return SessionView.of(lessons.changeLevel(id, request.cefr()));
+        return view(lessons.changeLevel(id, request.cefr()));
     }
 
     @PostMapping("/{id}/end")
     public SessionView end(@PathVariable long id) {
-        return SessionView.of(lessons.endSession(id));
+        return view(lessons.endSession(id));
     }
 
     private TeacherReply reply(ChatMessage m) {

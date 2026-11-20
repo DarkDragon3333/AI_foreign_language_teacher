@@ -64,7 +64,9 @@ docker compose up -d --build
 | GET | `/api/scenarios/sessions/{id}` | чеклист целей сценария в уроке |
 | WS | `/ws/voice` | дуплекс: PCM 16 kHz в binary, управление и ответы в JSON (см. ниже) |
 
-Режимы урока: `conversation`, `explain`, `correct`, `drill`, `roleplay` (сценарий в `topic` — slug из `/api/scenarios`).
+Режимы урока: `conversation`, `explain`, `correct`, `drill`, `roleplay` (сценарий в `topic` — slug из `/api/scenarios`), `structured` (guided lesson).
+
+**Guided lesson (`structured`):** при старте передайте `durationMin`: **15** или **25**. В одном чате четыре фазы по таймеру: warm-up → input → practice → feedback. В ответах сессии и в SSE `final` — поля `lessonPhase`, `phaseLabel`, `minutesRemaining`, `targetMinutes`. Состояние в `sessions.plan_state`.
 
 ## Как решается, что показать в «Исправлении»
 

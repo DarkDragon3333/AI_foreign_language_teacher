@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Learn · English learning</title>
+  <title>Home · English learning</title>
   <link rel="icon" href="data:,">
   <script>
     try {
@@ -13,7 +13,7 @@
       document.documentElement.dataset.theme = 'sage';
     }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=45">
+  <link rel="stylesheet" href="/css/app.css?v=54">
 </head>
 <body>
   <div class="app">
@@ -25,7 +25,7 @@
       <nav class="side-nav" aria-label="Workspace">
         <button id="nav-learn" type="button" aria-current="page">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg>
-          Learn
+          Home
         </button>
         <button id="nav-levels" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h6.2A2.2 2.2 0 0 1 13.4 6.7V19a2 2 0 0 0-2-1.6H5V4.5zM19 4.5h-6.2A2.2 2.2 0 0 0 10.6 6.7V19a2 2 0 0 1 2-1.6H19V4.5z"/></svg>
@@ -53,7 +53,6 @@
 
     <div class="workspace">
       <header class="topbar">
-        <p class="crumbs"><span id="crumb-a">Learn</span> <span class="crumb-sep">/</span> <span id="crumb-b">Overview</span></p>
         <div class="topbar-right">
           <span id="range-label" class="range-label">English · A1–C2</span>
           <button id="exit-practice" type="button" class="exit-lesson" hidden>Exit drill</button>
@@ -71,6 +70,7 @@
             <h1>A little practice. A world of possibility.</h1>
 
             <div class="dash">
+              <div class="dash-learn">
               <article class="hero">
                 <p class="eyebrow">Continue learning</p>
                 <h2 id="continue-title">Start a conversation</h2>
@@ -81,12 +81,39 @@
                 <p id="continue-meta" class="hero-meta" hidden></p>
 
                 <form id="start-form">
-                  <div id="mode-pills" class="mode-pills" role="radiogroup" aria-label="Lesson mode">
-                    <button type="button" data-mode="conversation" aria-pressed="true">Conversation</button>
-                    <button type="button" data-mode="explain">Explain</button>
-                    <button type="button" data-mode="correct">Check</button>
-                    <button type="button" data-mode="drill">Drill</button>
-                    <button type="button" data-mode="roleplay">Role-play</button>
+                  <div class="lesson-picker">
+                    <div class="lesson-picker-intro">
+                      <p class="lesson-picker-label">Lesson with your teacher</p>
+                      <p class="lesson-picker-hint">Live chat in English — by text or voice.</p>
+                    </div>
+                    <div class="mode-pills mode-pills-primary" role="radiogroup" aria-label="Main lesson type">
+                      <button type="button" data-mode="conversation" aria-pressed="true">Conversation</button>
+                      <button type="button" data-mode="structured" aria-pressed="false">Guided lesson</button>
+                    </div>
+                    <details class="lesson-mode-more" id="lesson-mode-more">
+                      <summary>Other lesson modes</summary>
+                      <p class="lesson-picker-sub">Same teacher chat, different focus.</p>
+                      <div class="mode-pills mode-pills-secondary" role="radiogroup" aria-label="Other lesson modes">
+                        <button type="button" data-mode="explain" aria-pressed="false">Explain</button>
+                        <button type="button" data-mode="correct" aria-pressed="false">Check</button>
+                        <button type="button" data-mode="drill" aria-pressed="false">Drill</button>
+                        <button type="button" data-mode="roleplay" aria-pressed="false">Role-play</button>
+                      </div>
+                    </details>
+                    <div id="structured-options" class="guided-options" hidden>
+                      <span class="guided-options-label">Guided lesson length</span>
+                      <span class="duration-segments" role="radiogroup" aria-label="Guided lesson length">
+                        <label class="duration-seg">
+                          <input type="radio" name="duration" value="15" checked>
+                          <span>15 min</span>
+                        </label>
+                        <label class="duration-seg">
+                          <input type="radio" name="duration" value="25">
+                          <span>25 min</span>
+                        </label>
+                      </span>
+                      <span class="guided-options-note">Four steps in one chat: warm-up → input → practice → feedback.</span>
+                    </div>
                   </div>
                   <select id="mode" class="visually-hidden" tabindex="-1" aria-hidden="true">
                     <option value="conversation">Conversation</option>
@@ -94,6 +121,7 @@
                     <option value="correct">Check</option>
                     <option value="drill">Drill</option>
                     <option value="roleplay">Role-play</option>
+                    <option value="structured">Guided lesson</option>
                   </select>
                   <label id="scenario-wrap" hidden>Scenario
                     <select id="scenario"></select>
@@ -106,29 +134,9 @@
                 <button id="resume-lesson" type="button" class="lime" hidden>Continue lesson <span aria-hidden="true">→</span></button>
               </article>
 
-              <article class="goal">
-                <div class="goal-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 2"/></svg>
-                </div>
-                <h2>Your daily goal</h2>
-                <label class="goal-pick">Minutes per day
-                  <select id="goal-select" aria-label="Daily goal in minutes">
-                    <option value="5">5</option>
-                    <option value="10" selected>10</option>
-                    <option value="15">15</option>
-                    <option value="25">25</option>
-                  </select>
-                </label>
-                <p class="goal-figure"><span id="goal-value">0</span> <span id="goal-of" class="goal-of">/ 10 min</span></p>
-                <div class="bar goal-bar" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
-                  <span id="goal-fill"></span>
-                </div>
-                <p id="goal-caption" class="goal-caption">0 of 10 minutes complete</p>
-              </article>
-
-              <div class="practice-col">
-                <h2 class="section-title">Today's practice</h2>
-                <p class="section-sub">Small steps, real progress.</p>
+              <div class="practice-col" id="extra-practice">
+                <h2 class="section-title">Quick drills</h2>
+                <p class="section-sub">Short practice without the teacher chat. Still counts toward your daily minutes.</p>
                 <div class="practice-row">
                   <button id="open-review" type="button" class="practice-card">
                     <span class="practice-icon" aria-hidden="true">Aa</span>
@@ -166,10 +174,13 @@
                   </button>
                 </div>
               </div>
+              </div>
 
+              <div class="dash-week">
               <article class="path-card schedule-card" id="schedule-card">
                 <h2>This week</h2>
                 <p class="section-sub">Study days and what is planned.</p>
+                <p id="today-plan-hint" class="today-plan-hint" hidden></p>
                 <div id="weekday-picks" class="weekday-picks" aria-label="Study days">
                   <button type="button" data-dow="1" class="dow-btn">Mon</button>
                   <button type="button" data-dow="2" class="dow-btn">Tue</button>
@@ -181,7 +192,28 @@
                 </div>
                 <ul id="week-slots" class="week-slots"></ul>
               </article>
+              </div>
 
+              <div class="dash-goal">
+              <article class="goal">
+                <div class="goal-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 2"/></svg>
+                </div>
+                <h2>Your daily goal</h2>
+                <label class="goal-pick">Minutes per day
+                  <select id="goal-select" aria-label="Daily goal in minutes">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                  </select>
+                </label>
+                <p class="goal-figure"><span id="goal-value">0</span> <span id="goal-of" class="goal-of">/ 10 min</span></p>
+                <div class="bar goal-bar" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
+                  <span id="goal-fill"></span>
+                </div>
+                <p id="goal-caption" class="goal-caption">0 of 10 minutes complete</p>
+              </article>
               <article class="path-card path-card-levels">
                 <h2>Your learning path</h2>
                 <p>Build your English, one level at a time.</p>
@@ -191,6 +223,7 @@
                 </p>
                 <button id="explore-levels" type="button" class="text-link">Explore all levels <span aria-hidden="true">→</span></button>
               </article>
+              </div>
             </div>
           </div>
         </section>
@@ -645,6 +678,15 @@
                 <div class="lesson-head-copy">
                   <p id="lesson-lede" class="lesson-lede">Write the next line in English, or press Speak.</p>
                   <p id="lesson-topic" class="lesson-topic-line" hidden></p>
+                  <div id="structured-phase-wrap" class="structured-phases" hidden>
+                    <div class="structured-phase-track" role="list" aria-label="Lesson phases">
+                      <span data-phase="warmup" class="structured-phase-seg" role="listitem">Warm-up</span>
+                      <span data-phase="input" class="structured-phase-seg" role="listitem">Input</span>
+                      <span data-phase="practice" class="structured-phase-seg" role="listitem">Practice</span>
+                      <span data-phase="feedback" class="structured-phase-seg" role="listitem">Feedback</span>
+                    </div>
+                    <p id="structured-time-left" class="structured-time muted"></p>
+                  </div>
                 </div>
                 <div class="lesson-head-controls">
                   <div class="level-stepper" role="group" aria-label="Lesson level">
@@ -699,6 +741,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/main.js?v=36"></script>
+  <script type="module" src="/js/main.js?v=40"></script>
 </body>
 </html>

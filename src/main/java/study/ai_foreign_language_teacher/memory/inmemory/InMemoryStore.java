@@ -10,6 +10,7 @@ import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
+import study.ai_foreign_language_teacher.domain.StructuredPlanState;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.MessageRepository;
@@ -65,10 +66,17 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     }
 
     @Override
-    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model) {
-        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(), null, model, null);
+    public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model,
+                                StructuredPlanState planState) {
+        LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(),
+                null, model, null, planState);
         sessions.put(s.id(), s);
         return s;
+    }
+
+    @Override
+    public void updatePlanState(long id, StructuredPlanState planState) {
+        sessions.computeIfPresent(id, (k, s) -> s.withPlanState(planState));
     }
 
     @Override
@@ -88,19 +96,19 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     @Override
     public void updateSupportLevel(long id, int supportLevel) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                supportLevel, s.startedAt(), s.endedAt(), s.model(), s.summary()));
+                supportLevel, s.startedAt(), s.endedAt(), s.model(), s.summary(), s.planState()));
     }
 
     @Override
     public void updateCefr(long id, Cefr cefr) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), cefr,
-                s.supportLevel(), s.startedAt(), s.endedAt(), s.model(), s.summary()));
+                s.supportLevel(), s.startedAt(), s.endedAt(), s.model(), s.summary(), s.planState()));
     }
 
     @Override
     public void end(long id, SessionSummary summary) {
         sessions.computeIfPresent(id, (k, s) -> new LessonSession(s.id(), s.userId(), s.mode(), s.topic(), s.cefr(),
-                s.supportLevel(), s.startedAt(), Instant.now(), s.model(), summary));
+                s.supportLevel(), s.startedAt(), Instant.now(), s.model(), summary, s.planState()));
     }
 
     @Override
@@ -134,6 +142,16 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     public List<ChatMessage> lastN(long sessionId, int n) {
         List<ChatMessage> all = all(sessionId);
         return all.subList(Math.max(0, all.size() - n), all.size());
+    }
+
+    @Override
+    public int countUserTurnsSince(long sessionId, Instant since) {
+        if (since == null) {
+            return countUserTurns(sessionId);
+        }
+        return (int) all(sessionId).stream()
+                .filter(m -> m.role() == Role.USER && !m.createdAt().isBefore(since))
+                .count();
     }
 
     @Override

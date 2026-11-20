@@ -15,4 +15,6 @@ public interface MessageRepository {
     List<ChatMessage> all(long sessionId);
 
     int countUserTurns(long sessionId);
+
+    int countUserTurnsSince(long sessionId, java.time.Instant since);
 }
