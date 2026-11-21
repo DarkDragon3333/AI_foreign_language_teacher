@@ -13,7 +13,7 @@
       document.documentElement.dataset.theme = 'sage';
     }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=54">
+  <link rel="stylesheet" href="/css/app.css?v=56">
 </head>
 <body>
   <div class="app">
@@ -178,19 +178,28 @@
 
               <div class="dash-week">
               <article class="path-card schedule-card" id="schedule-card">
-                <h2>This week</h2>
-                <p class="section-sub">Study days and what is planned.</p>
-                <p id="today-plan-hint" class="today-plan-hint" hidden></p>
-                <div id="weekday-picks" class="weekday-picks" aria-label="Study days">
-                  <button type="button" data-dow="1" class="dow-btn">Mon</button>
-                  <button type="button" data-dow="2" class="dow-btn">Tue</button>
-                  <button type="button" data-dow="3" class="dow-btn">Wed</button>
-                  <button type="button" data-dow="4" class="dow-btn">Thu</button>
-                  <button type="button" data-dow="5" class="dow-btn">Fri</button>
-                  <button type="button" data-dow="6" class="dow-btn">Sat</button>
-                  <button type="button" data-dow="7" class="dow-btn">Sun</button>
+                <div class="cal-head">
+                  <div class="cal-title">
+                    <h2 id="cal-month">This month</h2>
+                    <p id="cal-year" class="cal-year"></p>
+                  </div>
+                  <div class="cal-tools">
+                    <button type="button" id="cal-prev" class="cal-nav" aria-label="Previous month">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5 9 12l5.5 5.5"/></svg>
+                    </button>
+                    <button type="button" id="cal-next" class="cal-nav" aria-label="Next month">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5 15 12l-5.5 5.5"/></svg>
+                    </button>
+                    <button type="button" id="cal-settings" class="cal-gear" aria-label="Study days" aria-haspopup="dialog" aria-expanded="false" aria-controls="cal-settings-dialog">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-                <ul id="week-slots" class="week-slots"></ul>
+                <div id="cal-grid" class="cal-grid" role="group"></div>
+                <div id="cal-day" class="cal-day" hidden aria-live="polite"></div>
               </article>
               </div>
 
@@ -741,6 +750,27 @@
     </div>
   </div>
 
-  <script type="module" src="/js/main.js?v=40"></script>
+  <dialog id="cal-settings-dialog" class="cal-dialog" aria-labelledby="cal-settings-title">
+    <form id="cal-settings-form">
+      <h3 id="cal-settings-title">Study days</h3>
+      <p>These days repeat every week.</p>
+      <div id="weekday-picks" class="weekday-picks" aria-label="Study days">
+        <button type="button" data-dow="1" class="dow-btn">Mon</button>
+        <button type="button" data-dow="2" class="dow-btn">Tue</button>
+        <button type="button" data-dow="3" class="dow-btn">Wed</button>
+        <button type="button" data-dow="4" class="dow-btn">Thu</button>
+        <button type="button" data-dow="5" class="dow-btn">Fri</button>
+        <button type="button" data-dow="6" class="dow-btn">Sat</button>
+        <button type="button" data-dow="7" class="dow-btn">Sun</button>
+      </div>
+      <p id="cal-days-hint" class="cal-days-hint" hidden>Pick at least one day.</p>
+      <div class="cal-dialog-actions">
+        <button type="button" id="cal-settings-close" class="cal-close">Close</button>
+        <button type="submit" id="cal-settings-save" class="cal-save">Save days</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/js/main.js?v=41"></script>
 </body>
 </html>

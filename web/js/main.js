@@ -1,4 +1,4 @@
-import { api, chatTurn, transcribe } from './api.js?v=19';
+import { api, chatTurn, transcribe } from './api.js?v=20';
 import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=18';
 import { openReview, refreshReviewCount } from './review.js?v=19';
 import { VoiceDuplex } from './voice.js?v=18';
@@ -37,6 +37,8 @@ const ACTIVITY_NAMES = {
   review: 'Review', grammar: 'Grammar', speaking: 'Speaking', listening: 'Listening', conversation: 'Conversation',
 };
 const STATUS_NAMES = { planned: 'Planned', done: 'Done', skipped: 'Skipped', cancelled: 'Cancelled' };
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -53,6 +55,10 @@ const state = {
   goalMin: 10,
   studyWeekdays: [1, 2, 3, 4, 5],
   lessonTimerMs: 0,
+  calendarYear: new Date().getFullYear(),
+  calendarMonth: new Date().getMonth() + 1,
+  selectedDate: null,
+  monthSlots: new Map(),
 };
 
 const TAB_TITLES = {
@@ -126,20 +132,12 @@ function localIsoDate(date = new Date()) {
 }
 
 const TODAY_OPEN = {
-  grammar: { tab: 'grammar', label: 'Open grammar' },
-  speaking: { tab: 'speaking', label: 'Open speaking' },
-  listening: { tab: 'listening', label: 'Open listening' },
-  review: { tab: 'review', label: 'Open review' },
-  conversation: { tab: null, label: 'Open chat' },
+  grammar: { tab: 'grammar' },
+  speaking: { tab: 'speaking' },
+  listening: { tab: 'listening' },
+  review: { tab: 'review' },
+  conversation: { tab: null },
 };
-
-function todayPlanHint(slot) {
-  const name = ACTIVITY_NAMES[slot.activityType] || slot.activityType;
-  if (slot.activityType === 'conversation') {
-    return `Today: ${name}. Start it with Continue lesson in the card above.`;
-  }
-  return `Today: ${name}. Open the drill — it is not in the teacher chat above.`;
-}
 
 function focusConversationStart() {
   showTab('learn');
@@ -148,90 +146,254 @@ function focusConversationStart() {
   document.querySelector('.hero')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-async function loadSchedule() {
-  try {
-    const week = await api.scheduleWeek();
-    state.studyWeekdays = week.studyWeekdays || [1, 2, 3, 4, 5];
-    for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
-      btn.classList.toggle('is-on', state.studyWeekdays.includes(Number(btn.dataset.dow)));
+let scheduleLoad = 0;
+let weekdayDraft = [];
+
+function isoDate(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function longDate(date) {
+  return new Date(date + 'T12:00:00').toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
+
+function startLabel(activityType) {
+  const name = ACTIVITY_NAMES[activityType] || 'lesson';
+  return 'Start ' + name.toLowerCase();
+}
+
+function paintWeekdayDraft() {
+  for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
+    const on = weekdayDraft.includes(Number(btn.dataset.dow));
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  const empty = weekdayDraft.length === 0;
+  $('cal-days-hint').hidden = !empty;
+  $('cal-settings-save').disabled = empty;
+}
+
+function shiftCalendarMonth(delta) {
+  const date = new Date(state.calendarYear, state.calendarMonth - 1 + delta, 1);
+  state.calendarYear = date.getFullYear();
+  state.calendarMonth = date.getMonth() + 1;
+  state.selectedDate = null;
+  $('cal-day').hidden = true;
+  loadSchedule();
+}
+
+function selectCalendarDay(date) {
+  const cells = document.querySelectorAll('#cal-grid .cal-cell');
+  if (state.selectedDate === date) {
+    state.selectedDate = null;
+    $('cal-day').hidden = true;
+    for (const btn of cells) btn.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  state.selectedDate = date;
+  for (const btn of cells) btn.setAttribute('aria-pressed', btn.dataset.date === date ? 'true' : 'false');
+  renderDayPanel(date);
+}
+
+function renderCalendar() {
+  const year = state.calendarYear;
+  const month = state.calendarMonth;
+  const monthName = MONTH_NAMES[month - 1];
+  $('cal-month').textContent = monthName;
+  $('cal-year').textContent = String(year);
+  const grid = $('cal-grid');
+  grid.setAttribute('aria-label', monthName + ' ' + year);
+  grid.textContent = '';
+  for (const name of DOW_LABELS) {
+    const head = document.createElement('div');
+    head.className = 'cal-dow';
+    head.textContent = name;
+    head.setAttribute('aria-hidden', 'true');
+    grid.append(head);
+  }
+  const lead = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+  for (let i = 0; i < lead; i += 1) {
+    const pad = document.createElement('div');
+    pad.className = 'cal-pad';
+    pad.setAttribute('aria-hidden', 'true');
+    grid.append(pad);
+  }
+  const today = localIsoDate();
+  const days = new Date(year, month, 0).getDate();
+  const prefix = isoDate(year, month, 1).slice(0, 8);
+  for (let day = 1; day <= days; day += 1) {
+    const date = isoDate(year, month, day);
+    const slot = state.monthSlots.get(date);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cal-cell';
+    btn.dataset.date = date;
+    btn.textContent = String(day);
+    if (date === today) btn.classList.add('is-today');
+    if (slot?.status === 'done') btn.classList.add('is-done');
+    else if (slot?.status === 'skipped') btn.classList.add('is-skipped');
+    else if (slot?.status === 'planned' && date >= today) btn.classList.add('is-planned');
+    const bits = [longDate(date)];
+    if (slot) {
+      bits.push(ACTIVITY_NAMES[slot.activityType] || slot.activityType);
+      bits.push(STATUS_NAMES[slot.status] || slot.status);
     }
-    const list = $('week-slots');
-    list.textContent = '';
-    const today = localIsoDate();
-    let todayPlanned = null;
-    const activeDays = new Set(state.studyWeekdays);
-    for (const slot of week.slots || []) {
-      const jsDow = new Date(slot.date + 'T12:00:00').getDay();
-      const isoDow = jsDow === 0 ? 7 : jsDow;
-      if (!activeDays.has(isoDow)) continue;
-      const li = document.createElement('li');
-      const label = document.createElement('span');
-      label.className = 'slot-date';
-      label.textContent = new Date(slot.date + 'T12:00:00').toLocaleDateString('en-GB', {
-        weekday: 'short', day: 'numeric', month: 'short',
-      });
-      const select = document.createElement('select');
-      for (const [key, name] of Object.entries(ACTIVITY_NAMES)) {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = name;
-        opt.selected = key === slot.activityType;
-        select.append(opt);
-      }
-      select.disabled = slot.status !== 'planned';
-      select.addEventListener('change', () => {
-        api.patchScheduleSlot(slot.date, { activityType: select.value }).then(() => loadSchedule()).catch((e) => fatal(e.message));
-      });
-      const end = document.createElement('span');
-      end.className = 'slot-end';
-      if (slot.date === today && slot.status === 'planned') {
-        todayPlanned = slot;
-        const open = TODAY_OPEN[slot.activityType];
-        if (open) {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'slot-open';
-          button.textContent = open.label;
-          button.addEventListener('click', () => {
-            if (open.tab) showTab(open.tab);
-            else focusConversationStart();
-          });
-          end.append(button);
-        }
-      }
-      const status = document.createElement('span');
-      status.className = 'slot-status';
-      status.textContent = STATUS_NAMES[slot.status] || slot.status;
-      end.append(status);
-      li.append(label, select, end);
-      list.append(li);
-    }
-    const hint = $('today-plan-hint');
-    if (hint) {
-      hint.hidden = !todayPlanned;
-      hint.textContent = todayPlanned ? todayPlanHint(todayPlanned) : '';
-    }
-  } catch {
-    $('week-slots').textContent = '';
+    btn.setAttribute('aria-label', bits.join(', '));
+    btn.setAttribute('aria-pressed', state.selectedDate === date ? 'true' : 'false');
+    grid.append(btn);
+  }
+  if (state.selectedDate && !state.selectedDate.startsWith(prefix)) {
+    state.selectedDate = null;
+    $('cal-day').hidden = true;
   }
 }
 
-for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
-  btn.addEventListener('click', async () => {
-    const dow = Number(btn.dataset.dow);
-    let days = [...state.studyWeekdays];
-    if (days.includes(dow)) days = days.filter((d) => d !== dow);
-    else days.push(dow);
-    days.sort((a, b) => a - b);
-    try {
-      const week = await api.scheduleWeekdays(days);
-      state.studyWeekdays = week.studyWeekdays;
-      await loadSchedule();
-    } catch (e) {
-      fatal(e.message);
+function renderDayPanel(date) {
+  const panel = $('cal-day');
+  panel.hidden = false;
+  panel.textContent = '';
+  const slot = state.monthSlots.get(date);
+  const title = document.createElement('p');
+  title.className = 'cal-day-date';
+  title.textContent = longDate(date);
+  panel.append(title);
+  if (!slot) {
+    const meta = document.createElement('p');
+    meta.className = 'cal-day-meta';
+    meta.textContent = 'Nothing planned.';
+    panel.append(meta);
+    return;
+  }
+  const meta = document.createElement('p');
+  meta.className = 'cal-day-meta';
+  meta.textContent = STATUS_NAMES[slot.status] || slot.status;
+  panel.append(meta);
+  const row = document.createElement('div');
+  row.className = 'cal-day-row';
+  if (slot.status === 'planned') {
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', 'Lesson type');
+    for (const [key, name] of Object.entries(ACTIVITY_NAMES)) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = name;
+      opt.selected = key === slot.activityType;
+      select.append(opt);
     }
+    select.addEventListener('change', () => {
+      api.patchScheduleSlot(date, { activityType: select.value })
+        .then(() => loadSchedule())
+        .catch((e) => fatal(e.message));
+    });
+    row.append(select);
+  } else {
+    const type = document.createElement('span');
+    type.className = 'cal-day-type';
+    type.textContent = ACTIVITY_NAMES[slot.activityType] || slot.activityType;
+    row.append(type);
+  }
+  const open = TODAY_OPEN[slot.activityType];
+  if (open) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cal-start';
+    button.textContent = startLabel(slot.activityType);
+    button.addEventListener('click', () => {
+      if (open.tab) showTab(open.tab);
+      else focusConversationStart();
+    });
+    row.append(button);
+  }
+  panel.append(row);
+}
+
+function showCalendarError(message) {
+  const panel = $('cal-day');
+  panel.hidden = false;
+  panel.textContent = '';
+  const meta = document.createElement('p');
+  meta.className = 'cal-day-meta';
+  meta.textContent = message;
+  panel.append(meta);
+}
+
+async function loadSchedule() {
+  const ticket = ++scheduleLoad;
+  const year = state.calendarYear;
+  const month = state.calendarMonth;
+  $('cal-month').textContent = MONTH_NAMES[month - 1];
+  $('cal-year').textContent = String(year);
+  try {
+    const data = await api.scheduleMonth(year, month);
+    if (ticket !== scheduleLoad) return;
+    state.studyWeekdays = data.studyWeekdays || [1, 2, 3, 4, 5];
+    state.monthSlots = new Map((data.slots || []).map((slot) => [slot.date, slot]));
+    renderCalendar();
+    if (state.selectedDate) renderDayPanel(state.selectedDate);
+  } catch (e) {
+    if (ticket !== scheduleLoad) return;
+    $('cal-grid').replaceChildren();
+    showCalendarError(e.message || 'The calendar did not load.');
+  }
+}
+
+$('cal-prev').addEventListener('click', () => shiftCalendarMonth(-1));
+$('cal-next').addEventListener('click', () => shiftCalendarMonth(1));
+$('cal-grid').addEventListener('click', (event) => {
+  const btn = event.target.closest('.cal-cell');
+  if (!btn || !$('cal-grid').contains(btn)) return;
+  selectCalendarDay(btn.dataset.date);
+});
+$('cal-grid').addEventListener('keydown', (event) => {
+  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+  if (!step) return;
+  const cells = [...document.querySelectorAll('#cal-grid .cal-cell')];
+  const index = cells.indexOf(document.activeElement);
+  if (index < 0) return;
+  const next = cells[index + step];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+});
+
+$('cal-settings').addEventListener('click', () => {
+  weekdayDraft = [...state.studyWeekdays];
+  paintWeekdayDraft();
+  $('cal-settings').setAttribute('aria-expanded', 'true');
+  $('cal-settings-dialog').showModal();
+});
+$('cal-settings-dialog').addEventListener('close', () => {
+  $('cal-settings').setAttribute('aria-expanded', 'false');
+});
+$('cal-settings-dialog').addEventListener('click', (event) => {
+  if (event.target === $('cal-settings-dialog')) $('cal-settings-dialog').close();
+});
+$('cal-settings-close').addEventListener('click', () => $('cal-settings-dialog').close());
+for (const btn of document.querySelectorAll('#weekday-picks .dow-btn')) {
+  btn.addEventListener('click', () => {
+    const dow = Number(btn.dataset.dow);
+    if (weekdayDraft.includes(dow)) weekdayDraft = weekdayDraft.filter((day) => day !== dow);
+    else weekdayDraft = [...weekdayDraft, dow].sort((a, b) => a - b);
+    paintWeekdayDraft();
   });
 }
+$('cal-settings-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (weekdayDraft.length === 0) return;
+  const button = $('cal-settings-save');
+  button.disabled = true;
+  try {
+    const saved = await api.scheduleWeekdays(weekdayDraft);
+    state.studyWeekdays = saved.studyWeekdays || weekdayDraft;
+    $('cal-settings-dialog').close();
+    await loadSchedule();
+  } catch (e) {
+    fatal(e.message);
+    paintWeekdayDraft();
+  }
+});
 
 async function loadInsights() {
   try {

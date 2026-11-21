@@ -20,6 +20,7 @@ export const api = {
   updateProfile: (patch) => request('PUT', '/api/profile', patch),
   todayProgress: () => request('GET', '/api/progress/today'),
   scheduleWeek: () => request('GET', '/api/schedule/week'),
+  scheduleMonth: (year, month) => request('GET', `/api/schedule/month?year=${year}&month=${month}`),
   scheduleWeekdays: (days) => request('PATCH', '/api/schedule/weekdays', { days }),
   patchScheduleSlot: (date, patch) => request('PATCH', `/api/schedule/slots?date=${encodeURIComponent(date)}`, patch),
   completeSchedule: (activityType) => request('POST', '/api/schedule/complete', { activityType }),

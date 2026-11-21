@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import study.ai_foreign_language_teacher.api.Dto.CompleteActivityRequest;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleSlotPatch;
+import study.ai_foreign_language_teacher.api.Dto.ScheduleMonthView;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleWeekView;
 import study.ai_foreign_language_teacher.api.Dto.StudyWeekdaysRequest;
 import study.ai_foreign_language_teacher.domain.ActivityType;
@@ -32,6 +33,11 @@ public class ScheduleController {
     @GetMapping("/week")
     public ScheduleWeekView week() {
         return ScheduleWeekView.of(schedule.week());
+    }
+
+    @GetMapping("/month")
+    public ScheduleMonthView month(@RequestParam int year, @RequestParam int month) {
+        return ScheduleMonthView.of(schedule.month(year, month));
     }
 
     @PostMapping("/refresh")

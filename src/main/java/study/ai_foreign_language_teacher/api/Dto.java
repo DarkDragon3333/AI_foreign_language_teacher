@@ -105,6 +105,13 @@ public final class Dto {
         }
     }
 
+    public record ScheduleMonthView(String monthStart, List<Integer> studyWeekdays, List<ScheduleSlotView> slots) {
+        static ScheduleMonthView of(study.ai_foreign_language_teacher.schedule.ScheduleService.MonthView month) {
+            return new ScheduleMonthView(month.monthStart().toString(), month.studyWeekdays(),
+                    month.slots().stream().map(ScheduleSlotView::of).toList());
+        }
+    }
+
     public record ScheduleSlotView(String date, String activityType, String status, Long sessionId, String planNote) {
         static ScheduleSlotView of(study.ai_foreign_language_teacher.schedule.ScheduleService.SlotView s) {
             return new ScheduleSlotView(s.date().toString(), s.activityType(), s.status(), s.sessionId(), s.planNote());

@@ -42,6 +42,9 @@ public class ScheduleService {
     public record WeekView(LocalDate weekStart, List<Integer> studyWeekdays, List<SlotView> slots) {
     }
 
+    public record MonthView(LocalDate monthStart, List<Integer> studyWeekdays, List<SlotView> slots) {
+    }
+
     public record SlotView(LocalDate date, String activityType, String status, Long sessionId, String planNote) {
         static SlotView of(ScheduleSlot s) {
             return new SlotView(s.slotDate(), s.activityType().json(), s.status().json(), s.sessionId(), s.planNote());
@@ -59,6 +62,28 @@ public class ScheduleService {
                 .map(SlotView::of)
                 .toList();
         return new WeekView(start, studyDays, slots);
+    }
+
+    /**
+     * Месяц для календаря. Done и Skipped остаются как были.
+     * Учебные дни с сегодня до конца месяца, если слота ещё нет, становятся Planned.
+     */
+    public MonthView month(int year, int month) {
+        if (month < 1 || month > 12) {
+            throw new IllegalArgumentException("month must be 1..12");
+        }
+        UserProfile profile = profiles.getOrCreateDefault();
+        refresh(profile);
+        LocalDate start = LocalDate.of(year, month, 1);
+        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+        ensureAhead(profile, start, end);
+        LocalDate today = LocalDate.now();
+        List<Integer> studyDays = profile.studyWeekdays();
+        List<SlotView> slots = schedule.between(profile.id(), start, end).stream()
+                .filter(slot -> visibleInMonth(slot, studyDays, today))
+                .map(SlotView::of)
+                .toList();
+        return new MonthView(start, studyDays, slots);
     }
 
     public WeekView updateWeekdays(List<Integer> days) {
@@ -152,6 +177,34 @@ public class ScheduleService {
                 schedule.updateType(profile.id(), date, ActivityType.parse(r.activityType()), r.reason());
             }
         }
+    }
+
+    private void ensureAhead(UserProfile profile, LocalDate start, LocalDate end) {
+        LocalDate today = LocalDate.now();
+        LocalDate from = start.isBefore(today) ? today : start;
+        if (from.isAfter(end)) {
+            return;
+        }
+        List<Integer> days = profile.studyWeekdays();
+        for (LocalDate date = from; !date.isAfter(end); date = date.plusDays(1)) {
+            if (!days.contains(date.getDayOfWeek().getValue())) {
+                continue;
+            }
+            if (schedule.find(profile.id(), date).isEmpty()) {
+                schedule.upsert(profile.id(), date, pickType(profile, date), SlotStatus.PLANNED, null, "Auto");
+            }
+        }
+    }
+
+    private static boolean visibleInMonth(ScheduleSlot slot, List<Integer> studyDays, LocalDate today) {
+        SlotStatus status = slot.status();
+        if (status == SlotStatus.DONE || status == SlotStatus.SKIPPED) {
+            return true;
+        }
+        if (!studyDays.contains(slot.slotDate().getDayOfWeek().getValue())) {
+            return false;
+        }
+        return !slot.slotDate().isBefore(today);
     }
 
     public void refresh(UserProfile profile) {

@@ -13,7 +13,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ScheduleServiceTest {
 
@@ -54,6 +56,72 @@ class ScheduleServiceTest {
 
         assertEquals(1, week.slots().size());
         assertEquals(monday, week.slots().getFirst().date());
+    }
+
+    @Test
+    void monthKeepsHistoryAndPlansStudyDaysAhead() {
+        InMemoryScheduleRepository slots = new InMemoryScheduleRepository();
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        List<Integer> study = List.of(1, 2, 3, 4, 5);
+        LocalDate weekStart = today.with(DayOfWeek.MONDAY);
+        LocalDate weekEnd = weekStart.plusDays(6);
+        LocalDate seedTo = weekEnd.isAfter(monthEnd) ? weekEnd : monthEnd;
+        for (LocalDate date = weekStart; !date.isAfter(seedTo); date = date.plusDays(1)) {
+            if (study.contains(date.getDayOfWeek().getValue())) {
+                slots.upsert(1, date, ActivityType.GRAMMAR,
+                        date.isBefore(today) ? SlotStatus.SKIPPED : SlotStatus.PLANNED, null, null);
+            }
+        }
+        LocalDate doneOffDay = null;
+        LocalDate stalePlan = null;
+        for (LocalDate date = monthStart; date.isBefore(weekStart); date = date.plusDays(1)) {
+            int dow = date.getDayOfWeek().getValue();
+            if (doneOffDay == null && !study.contains(dow)) {
+                doneOffDay = date;
+            }
+            if (stalePlan == null && study.contains(dow)) {
+                stalePlan = date;
+            }
+        }
+        if (doneOffDay != null) {
+            slots.upsert(1, doneOffDay, ActivityType.CONVERSATION, SlotStatus.DONE, null, null);
+        }
+        if (stalePlan != null) {
+            slots.upsert(1, stalePlan, ActivityType.REVIEW, SlotStatus.PLANNED, null, null);
+        }
+        LocalDate futureOff = null;
+        for (LocalDate date = today; !date.isAfter(monthEnd); date = date.plusDays(1)) {
+            if (!study.contains(date.getDayOfWeek().getValue())) {
+                futureOff = date;
+                slots.upsert(1, futureOff, ActivityType.SPEAKING, SlotStatus.PLANNED, null, null);
+                break;
+            }
+        }
+
+        ScheduleService.MonthView month = service(slots, study).month(today.getYear(), today.getMonthValue());
+        List<LocalDate> dates = month.slots().stream().map(ScheduleService.SlotView::date).toList();
+
+        if (doneOffDay != null) {
+            assertTrue(dates.contains(doneOffDay));
+        }
+        if (stalePlan != null) {
+            assertFalse(dates.contains(stalePlan));
+        }
+        if (futureOff != null) {
+            assertFalse(dates.contains(futureOff));
+        }
+        for (LocalDate date = today; !date.isAfter(monthEnd); date = date.plusDays(1)) {
+            if (study.contains(date.getDayOfWeek().getValue())) {
+                assertTrue(dates.contains(date), date.toString());
+            }
+        }
+        for (ScheduleService.SlotView slot : month.slots()) {
+            if (slot.date().isBefore(today)) {
+                assertTrue(slot.status().equals("done") || slot.status().equals("skipped"), slot.date().toString());
+            }
+        }
     }
 
     @Test
