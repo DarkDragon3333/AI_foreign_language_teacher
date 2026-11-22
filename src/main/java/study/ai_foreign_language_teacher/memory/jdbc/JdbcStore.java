@@ -12,6 +12,8 @@ import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
+import study.ai_foreign_language_teacher.domain.PlacementPlanState;
+import study.ai_foreign_language_teacher.domain.SessionPlanState;
 import study.ai_foreign_language_teacher.domain.StructuredPlanState;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import tools.jackson.core.JacksonException;
@@ -40,15 +42,19 @@ import java.util.Optional;
 @Profile("!memory")
 public class JdbcStore implements ProfileRepository, SessionRepository, MessageRepository, ErrorRepository, StorageHealth {
 
-    private final RowMapper<UserProfile> profileMapper = (rs, i) -> new UserProfile(
-            rs.getLong("id"),
-            rs.getString("display_name"),
-            rs.getString("native_lang"),
-            rs.getString("target_lang"),
-            Cefr.parseOr(rs.getString("cefr"), Cefr.B1),
-            rs.getBoolean("voice_enabled"),
-            rs.getInt("daily_goal_min"),
-            readWeekdays(rs));
+    private final RowMapper<UserProfile> profileMapper = (rs, i) -> {
+        java.sql.Date targetEnd = rs.getDate("target_end_date");
+        return new UserProfile(
+                rs.getLong("id"),
+                rs.getString("display_name"),
+                rs.getString("native_lang"),
+                rs.getString("target_lang"),
+                Cefr.parseOr(rs.getString("cefr"), Cefr.B1),
+                rs.getBoolean("voice_enabled"),
+                rs.getInt("daily_goal_min"),
+                readWeekdays(rs),
+                targetEnd == null ? null : targetEnd.toLocalDate());
+    };
 
     private final RowMapper<LessonSession> sessionMapper = (rs, i) -> new LessonSession(
             rs.getLong("id"),
@@ -118,12 +124,15 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
         }
     }
 
-    private StructuredPlanState readPlanState(ResultSet rs) throws SQLException {
+    private SessionPlanState readPlanState(ResultSet rs) throws SQLException {
         String json = rs.getString("plan_state");
         if (json == null || json.isBlank()) {
             return null;
         }
         try {
+            if (json.contains("\"stage\"")) {
+                return mapper.readValue(json, PlacementPlanState.class);
+            }
             return mapper.readValue(json, StructuredPlanState.class);
         } catch (JacksonException e) {
             return null;
@@ -162,7 +171,8 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
         return jdbc.sql("""
                         UPDATE users SET display_name = :name, native_lang = :nativeLang, target_lang = :targetLang,
                                          cefr = :cefr, voice_enabled = :voice, daily_goal_min = :goal,
-                                         study_weekdays = CAST(:weekdays AS jsonb)
+                                         study_weekdays = CAST(:weekdays AS jsonb),
+                                         target_end_date = :targetEnd
                         WHERE id = :id
                         RETURNING *""")
                 .param("name", p.displayName())
@@ -172,6 +182,7 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
                 .param("voice", p.voiceEnabled())
                 .param("goal", p.dailyGoalMin())
                 .param("weekdays", mapper.writeValueAsString(p.studyWeekdays()))
+                .param("targetEnd", p.targetEndDate())
                 .param("id", p.id())
                 .query(profileMapper).single();
     }
@@ -180,7 +191,7 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
 
     @Override
     public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model,
-                                StructuredPlanState planState) {
+                                SessionPlanState planState) {
         String planJson = planState == null ? null : mapper.writeValueAsString(planState);
         return jdbc.sql("""
                         INSERT INTO sessions (user_id, mode, topic, cefr_snapshot, model, plan_state)
@@ -196,7 +207,7 @@ public class JdbcStore implements ProfileRepository, SessionRepository, MessageR
     }
 
     @Override
-    public void updatePlanState(long id, StructuredPlanState planState) {
+    public void updatePlanState(long id, SessionPlanState planState) {
         String json = planState == null ? null : mapper.writeValueAsString(planState);
         jdbc.sql("UPDATE sessions SET plan_state = CAST(:planState AS jsonb) WHERE id = :id")
                 .param("planState", json, java.sql.Types.VARCHAR)

@@ -7,7 +7,11 @@ import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.RuleCard;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
+import study.ai_foreign_language_teacher.domain.DailyGoalMinutes;
+import study.ai_foreign_language_teacher.domain.LearningPlan;
 import study.ai_foreign_language_teacher.domain.UserProfile;
+import study.ai_foreign_language_teacher.session.LessonService;
+import study.ai_foreign_language_teacher.session.PlacementLessonService;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,7 +32,7 @@ public final class Dto {
     }
 
     public record ProfileRequest(String displayName, String cefr, Boolean voiceEnabled, Integer dailyGoalMin,
-                                 java.util.List<Integer> studyWeekdays) {
+                                 java.util.List<Integer> studyWeekdays, String targetEndDate) {
     }
 
     public record SessionSummaryView(int durationMinutes, int userTurns, List<RuleHitView> topRules) {
@@ -47,27 +51,80 @@ public final class Dto {
         }
     }
 
+    public record LearningPlanView(List<Integer> studyWeekdays, int dailyGoalMin, List<LearningPlanSlotView> monthSlots,
+                                   String targetEndDate) {
+        static LearningPlanView of(LearningPlan plan) {
+            if (plan == null) {
+                return null;
+            }
+            List<LearningPlanSlotView> slots = plan.monthSlots() == null ? List.of()
+                    : plan.monthSlots().stream().map(LearningPlanSlotView::of).toList();
+            return new LearningPlanView(plan.studyWeekdays(), plan.dailyGoalMin(), slots, plan.targetEndDate());
+        }
+    }
+
+    public record LearningPlanSlotView(String date, String activityType) {
+        static LearningPlanSlotView of(LearningPlan.MonthSlot slot) {
+            return new LearningPlanSlotView(slot.date(), slot.activityType());
+        }
+    }
+
+    public record ApplyLearningPlanRequest(List<Integer> studyWeekdays, Integer dailyGoalMin,
+                                           List<LearningPlanSlotView> monthSlots, String targetEndDate) {
+        public LearningPlan toPlan() {
+            List<LearningPlan.MonthSlot> slots = monthSlots == null ? List.of()
+                    : monthSlots.stream().map(s -> new LearningPlan.MonthSlot(s.date(), s.activityType())).toList();
+            int goal = dailyGoalMin == null ? 15 : DailyGoalMinutes.normalize(dailyGoalMin);
+            List<Integer> days = studyWeekdays == null ? List.of() : studyWeekdays;
+            String end = targetEndDate == null || targetEndDate.isBlank() ? null : targetEndDate.strip();
+            return new LearningPlan(days, goal, slots, end);
+        }
+    }
+
     public record SessionView(long id, String mode, String topic, String cefr, int supportLevel,
                               Instant startedAt, Instant endedAt, String model, SessionSummaryView summary,
-                              String lessonPhase, String phaseLabel, Integer minutesRemaining, Integer targetMinutes) {
+                              String lessonPhase, String phaseLabel, Integer minutesRemaining, Integer targetMinutes,
+                              String placementStage, String placementStepLabel, Integer placementStepIndex,
+                              Integer placementStepTotal, Boolean placementPlanReady, String placementAssessedLevel,
+                              LearningPlanView placementPlan) {
         static SessionView of(LessonSession s) {
-            return of(s, null);
+            return of(s, (LessonService.SessionExtras) null);
         }
 
-        static SessionView of(LessonSession s, study.ai_foreign_language_teacher.session.StructuredLessonService.PhaseView phase) {
+        static SessionView of(LessonSession s, LessonService.SessionExtras extras) {
             String lessonPhase = null;
             String phaseLabel = null;
             Integer minutesRemaining = null;
             Integer targetMinutes = null;
-            if (phase != null) {
+            if (extras != null && extras.structured() != null) {
+                var phase = extras.structured();
                 lessonPhase = phase.lessonPhase();
                 phaseLabel = phase.phaseLabel();
                 minutesRemaining = phase.minutesRemaining();
                 targetMinutes = phase.targetMinutes();
             }
+            String placementStage = null;
+            String placementStepLabel = null;
+            Integer placementStepIndex = null;
+            Integer placementStepTotal = null;
+            Boolean placementPlanReady = null;
+            String placementAssessedLevel = null;
+            LearningPlanView placementPlan = null;
+            if (extras != null && extras.placement() != null) {
+                PlacementLessonService.PlacementView p = extras.placement();
+                placementStage = p.stage();
+                placementStepLabel = p.stepLabel();
+                placementStepIndex = p.stepIndex();
+                placementStepTotal = p.stepTotal();
+                placementPlanReady = p.planReady();
+                placementAssessedLevel = p.assessedLevel();
+                placementPlan = LearningPlanView.of(p.learningPlan());
+            }
             return new SessionView(s.id(), s.mode().json(), s.topic(), s.cefr().name(), s.supportLevel(),
                     s.startedAt(), s.endedAt(), s.model(), SessionSummaryView.of(s.summary()),
-                    lessonPhase, phaseLabel, minutesRemaining, targetMinutes);
+                    lessonPhase, phaseLabel, minutesRemaining, targetMinutes,
+                    placementStage, placementStepLabel, placementStepIndex, placementStepTotal,
+                    placementPlanReady, placementAssessedLevel, placementPlan);
         }
     }
 
@@ -86,14 +143,16 @@ public final class Dto {
 
     public record ProfileView(long id, String displayName, String nativeLang, String targetLang, String cefr,
                               boolean voiceEnabled, int dailyGoalMin, List<Integer> dailyGoalChoices,
-                              List<Integer> studyWeekdays, List<String> levels, String model, String note) {
+                              List<Integer> studyWeekdays, String targetEndDate, List<String> levels, String model,
+                              String note) {
         static ProfileView of(UserProfile p, String model) {
             String note = switch (p.cefr()) {
                 case C1, C2 -> "На уровнях C1–C2 стиль небольшой локальной модели упрощён: нюансы и идиомы она передаёт хуже, чем живой преподаватель.";
                 default -> null;
             };
+            String targetEnd = p.targetEndDate() == null ? null : p.targetEndDate().toString();
             return new ProfileView(p.id(), p.displayName(), p.nativeLang(), p.targetLang(), p.cefr().name(),
-                    p.voiceEnabled(), p.dailyGoalMin(), List.of(5, 10, 15, 25), p.studyWeekdays(),
+                    p.voiceEnabled(), p.dailyGoalMin(), DailyGoalMinutes.CHOICES, p.studyWeekdays(), targetEnd,
                     List.of("A1", "A2", "B1", "B2", "C1", "C2"), model, note);
         }
     }

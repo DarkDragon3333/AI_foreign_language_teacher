@@ -4,7 +4,7 @@ import study.ai_foreign_language_teacher.domain.Cefr;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
-import study.ai_foreign_language_teacher.domain.StructuredPlanState;
+import study.ai_foreign_language_teacher.domain.SessionPlanState;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,9 +13,9 @@ public interface SessionRepository {
 
     /** @param model модель для этого урока; null — модель по умолчанию */
     LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model,
-                         StructuredPlanState planState);
+                         SessionPlanState planState);
 
-    void updatePlanState(long id, StructuredPlanState planState);
+    void updatePlanState(long id, SessionPlanState planState);
 
     Optional<LessonSession> find(long id);
 

@@ -9,7 +9,8 @@ public enum LessonMode {
     CORRECT(0.4, "The learner sends text to be corrected. Give the corrected version and explain each important error."),
     DRILL(0.4, "Run short practice drills: give one small task per turn, check the answer, then give the next task."),
     ROLEPLAY(0.7, "Stay in character for a role-play scene. Short natural lines; correct briefly and return to the scene."),
-    STRUCTURED(0.55, "Follow the current lesson phase instructions in STRUCTURED LESSON. One short teacher turn per step.");
+    STRUCTURED(0.55, "Follow the current lesson phase instructions in STRUCTURED LESSON. One short teacher turn per step."),
+    PLACEMENT(0.45, "Run the placement onboarding: level test, short survey, then propose a learning plan. One step per turn.");
 
     private final double temperature;
     private final String instruction;
@@ -41,7 +42,8 @@ public enum LessonMode {
         try {
             return valueOf(value.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown mode: " + value + " (expected conversation|explain|correct|drill|roleplay|structured)");
+            throw new IllegalArgumentException("Unknown mode: " + value
+                    + " (expected conversation|explain|correct|drill|roleplay|structured|placement)");
         }
     }
 }

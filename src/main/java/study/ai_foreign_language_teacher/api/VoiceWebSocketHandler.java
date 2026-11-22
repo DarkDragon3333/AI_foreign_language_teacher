@@ -296,7 +296,8 @@ public class VoiceWebSocketHandler extends AbstractWebSocketHandler {
                 }
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("type", "final");
-                body.put("session", SessionView.of(turn.session(), lessons.phaseView(turn.session())));
+                body.put("session", SessionView.of(turn.session(),
+                        LessonService.SessionExtras.of(turn.session(), lessons)));
                 body.put("user", turn.userMessage() == null ? null : MessageView.of(turn.userMessage(), null));
                 body.put("teacher", MessageView.of(turn.teacherMessage(), turn.reply()));
                 if (turn.scenario() != null) {

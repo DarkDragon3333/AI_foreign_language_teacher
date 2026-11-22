@@ -5,8 +5,13 @@ import study.ai_foreign_language_teacher.domain.ActivityType;
 import study.ai_foreign_language_teacher.domain.Cefr;
 import study.ai_foreign_language_teacher.domain.SlotStatus;
 import study.ai_foreign_language_teacher.domain.UserProfile;
+import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
 import study.ai_foreign_language_teacher.memory.inmemory.InMemoryScheduleRepository;
+import study.ai_foreign_language_teacher.memory.rules.ReviewService;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -54,8 +59,8 @@ class ScheduleServiceTest {
 
         ScheduleService.WeekView week = service.week();
 
-        assertEquals(1, week.slots().size());
-        assertEquals(monday, week.slots().getFirst().date());
+        assertTrue(week.slots().stream().anyMatch(s -> s.date().equals(monday)));
+        assertFalse(week.slots().stream().anyMatch(s -> s.date().equals(saturday)));
     }
 
     @Test
@@ -125,6 +130,44 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void monthHidesPlannedSlotsAfterTargetEndDate() {
+        InMemoryScheduleRepository slots = new InMemoryScheduleRepository();
+        LocalDate today = LocalDate.now();
+        LocalDate targetEnd = today.plusDays(3);
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        List<Integer> study = List.of(1, 2, 3, 4, 5, 6, 7);
+        for (LocalDate date = today; !date.isAfter(monthEnd); date = date.plusDays(1)) {
+            slots.upsert(1, date, ActivityType.GRAMMAR, SlotStatus.PLANNED, null, null);
+        }
+        ProfileRepository profiles = new ProfileRepository() {
+            private UserProfile profile = new UserProfile(
+                    1, "Student", "ru", "en", Cefr.A2, false, 10, study, targetEnd);
+
+            @Override
+            public UserProfile getOrCreateDefault() {
+                return profile;
+            }
+
+            @Override
+            public UserProfile save(UserProfile updated) {
+                profile = updated;
+                return profile;
+            }
+        };
+        ReviewService reviews = org.mockito.Mockito.mock(ReviewService.class);
+        when(reviews.queue()).thenReturn(new ReviewService.Queue(0, List.of()));
+        ErrorRepository errors = org.mockito.Mockito.mock(ErrorRepository.class);
+        when(errors.top(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+        ScheduleService schedule = new ScheduleService(profiles, slots, null, errors, reviews, null);
+
+        ScheduleService.MonthView month = schedule.month(today.getYear(), today.getMonthValue());
+
+        assertTrue(month.slots().stream().noneMatch(s -> s.date().isAfter(targetEnd) && "planned".equals(s.status())));
+    }
+
+    @Test
     void completeTodayLeavesDifferentActivity() {
         InMemoryScheduleRepository slots = new InMemoryScheduleRepository();
         LocalDate today = LocalDate.now();
@@ -141,7 +184,7 @@ class ScheduleServiceTest {
     private static ScheduleService service(InMemoryScheduleRepository slots, List<Integer> studyWeekdays) {
         ProfileRepository profiles = new ProfileRepository() {
             private UserProfile profile = new UserProfile(
-                    1, "Student", "ru", "en", Cefr.A2, false, 10, studyWeekdays);
+                    1, "Student", "ru", "en", Cefr.A2, false, 10, studyWeekdays, null);
 
             @Override
             public UserProfile getOrCreateDefault() {
@@ -154,6 +197,10 @@ class ScheduleServiceTest {
                 return profile;
             }
         };
-        return new ScheduleService(profiles, slots, null, null, null, null);
+        ReviewService reviews = mock(ReviewService.class);
+        when(reviews.queue()).thenReturn(new ReviewService.Queue(0, List.of()));
+        ErrorRepository errors = mock(ErrorRepository.class);
+        when(errors.top(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        return new ScheduleService(profiles, slots, null, errors, reviews, null);
     }
 }

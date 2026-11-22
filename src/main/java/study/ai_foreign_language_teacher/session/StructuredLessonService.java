@@ -27,7 +27,7 @@ public class StructuredLessonService {
 
     public record PhaseView(String lessonPhase, String phaseLabel, int minutesRemaining, int targetMinutes) {
         static PhaseView of(LessonSession session, LessonPhase phase, Instant now) {
-            StructuredPlanState plan = session.planState();
+            StructuredPlanState plan = session.structuredPlan();
             if (plan == null) {
                 return null;
             }
@@ -48,11 +48,11 @@ public class StructuredLessonService {
     }
 
     public Optional<PhaseView> view(LessonSession session) {
-        if (session.mode() != LessonMode.STRUCTURED || session.planState() == null) {
+        if (session.mode() != LessonMode.STRUCTURED || session.structuredPlan() == null) {
             return Optional.empty();
         }
         Instant now = clock.instant();
-        LessonPhase phase = session.planState().phase();
+        LessonPhase phase = session.structuredPlan().phase();
         return Optional.of(PhaseView.of(session, phase, now));
     }
 
@@ -60,10 +60,10 @@ public class StructuredLessonService {
      * Пересчитывает фазу по времени и сохраняет при смене (не раньше одной реплики ученика в текущей фазе).
      */
     public LessonSession syncPhase(LessonSession session) {
-        if (session.mode() != LessonMode.STRUCTURED || session.planState() == null || session.endedAt() != null) {
+        if (session.mode() != LessonMode.STRUCTURED || session.structuredPlan() == null || session.endedAt() != null) {
             return session;
         }
-        StructuredPlanState plan = session.planState();
+        StructuredPlanState plan = session.structuredPlan();
         Instant now = clock.instant();
         long elapsed = StructuredLessonPhases.elapsedSeconds(session.startedAt(), now);
         LessonPhase timePhase = StructuredLessonPhases.phaseAt(plan.targetMinutes(), elapsed);

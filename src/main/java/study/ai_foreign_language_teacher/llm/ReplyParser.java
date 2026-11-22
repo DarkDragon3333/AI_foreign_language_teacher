@@ -41,13 +41,14 @@ public class ReplyParser {
         if (parsed != null && blank(parsed.replyEn()) && !blank(parsed.nextPrompt())) {
             // модель положила всю реплику в next_prompt (типично для первого хода) — это нормальный ответ
             parsed = new TeacherReply(parsed.nextPrompt(), parsed.replyRu(), parsed.correction(), parsed.explanation(),
-                    null, parsed.cardsToReview(), parsed.mode(), parsed.cefr(), parsed.supportLevel());
+                    null, parsed.cardsToReview(), parsed.mode(), parsed.cefr(), parsed.supportLevel(),
+                    parsed.readingPassage());
         }
         if (parsed == null || blank(parsed.replyEn())) {
             log.warn("LLM reply is not valid contract JSON, using fallback. Raw: {}", abbreviate(raw));
             String text = !blank(streamedReplyEn) ? streamedReplyEn.strip()
                     : parsed == null && looksLikePlainText(raw) ? raw.strip() : FALLBACK_TEXT;
-            return new TeacherReply(text, null, null, null, null, List.of(), mode.json(), cefr.name(), supportLevel);
+            return new TeacherReply(text, null, null, null, null, List.of(), mode.json(), cefr.name(), supportLevel, null);
         }
         String replyEn = trimTeacherClause(parsed.replyEn().strip());
         String nextPrompt = trimFollowUp(clean(parsed.nextPrompt()));
@@ -61,7 +62,8 @@ public class ReplyParser {
                         : parsed.cardsToReview().stream().filter(s -> !blank(s)).map(String::strip).distinct().limit(5).toList(),
                 mode.json(),
                 cefr.name(),
-                supportLevel);
+                supportLevel,
+                clean(parsed.readingPassage()));
     }
 
     /** Модель выдала JSON по контракту (а не обрывок или посторонний текст). */
@@ -115,7 +117,7 @@ public class ReplyParser {
         // answer_ru пишется до вопроса и переводит только ответ. Вопрос переводится в follow_up_ru.
         String russian = blank(question) ? plain(w.answerRu()) : joinRu(plain(w.answerRu()), plain(w.followUpRu()));
         return new TeacherReply(plain(w.answerEn()), russian, correction, explanation,
-                question, List.of(), null, null, null);
+                question, List.of(), null, null, null, plain(w.readingPassage()));
     }
 
     /**

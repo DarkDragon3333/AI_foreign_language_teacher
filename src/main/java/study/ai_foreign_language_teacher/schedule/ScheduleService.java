@@ -2,10 +2,12 @@ package study.ai_foreign_language_teacher.schedule;
 
 import org.springframework.stereotype.Service;
 import study.ai_foreign_language_teacher.domain.ActivityType;
+import study.ai_foreign_language_teacher.domain.DailyGoalMinutes;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.ScheduleSlot;
 import study.ai_foreign_language_teacher.domain.SlotStatus;
+import study.ai_foreign_language_teacher.domain.LearningPlan;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
@@ -59,6 +61,7 @@ public class ScheduleService {
         List<Integer> studyDays = profile.studyWeekdays();
         List<SlotView> slots = schedule.between(profile.id(), start, end).stream()
                 .filter(s -> studyDays.contains(s.slotDate().getDayOfWeek().getValue()))
+                .filter(s -> !afterTarget(profile, s.slotDate()) || s.status() != SlotStatus.PLANNED)
                 .map(SlotView::of)
                 .toList();
         return new WeekView(start, studyDays, slots);
@@ -80,17 +83,55 @@ public class ScheduleService {
         LocalDate today = LocalDate.now();
         List<Integer> studyDays = profile.studyWeekdays();
         List<SlotView> slots = schedule.between(profile.id(), start, end).stream()
-                .filter(slot -> visibleInMonth(slot, studyDays, today))
+                .filter(slot -> visibleInMonth(slot, studyDays, today, profile.targetEndDate()))
                 .map(SlotView::of)
                 .toList();
         return new MonthView(start, studyDays, slots);
+    }
+
+    /** Записывает слоты из placement-плана; прошедшие дни и Done/Skipped не трогаем. */
+    public void applyLearningPlan(LearningPlan plan) {
+        if (plan == null) {
+            return;
+        }
+        UserProfile profile = profiles.getOrCreateDefault();
+        List<Integer> days = plan.studyWeekdays() == null || plan.studyWeekdays().isEmpty()
+                ? profile.studyWeekdays() : normalizeWeekdays(plan.studyWeekdays());
+        int goal = DailyGoalMinutes.normalize(plan.dailyGoalMin());
+        LocalDate targetEnd = resolveTargetEnd(plan, profile);
+        profile = new UserProfile(profile.id(), profile.displayName(), profile.nativeLang(), profile.targetLang(),
+                profile.cefr(), profile.voiceEnabled(), goal, days, targetEnd);
+        profiles.save(profile);
+        if (plan.monthSlots() == null || plan.monthSlots().isEmpty()) {
+            refresh(profile);
+            return;
+        }
+        LocalDate today = LocalDate.now();
+        for (LearningPlan.MonthSlot slot : plan.monthSlots()) {
+            if (slot.date() == null || slot.activityType() == null) {
+                continue;
+            }
+            LocalDate date = LocalDate.parse(slot.date());
+            if (date.isBefore(today) || afterTarget(profile, date)) {
+                continue;
+            }
+            ActivityType type = ActivityType.parse(slot.activityType());
+            var existing = schedule.find(profile.id(), date);
+            if (existing.isPresent() && existing.get().status() != SlotStatus.PLANNED) {
+                continue;
+            }
+            SlotStatus status = existing.map(ScheduleSlot::status).orElse(SlotStatus.PLANNED);
+            schedule.upsert(profile.id(), date, type, status, null, "Placement plan");
+        }
+        refresh(profile);
     }
 
     public WeekView updateWeekdays(List<Integer> days) {
         UserProfile current = profiles.getOrCreateDefault();
         List<Integer> clean = normalizeWeekdays(days);
         UserProfile updated = new UserProfile(current.id(), current.displayName(), current.nativeLang(),
-                current.targetLang(), current.cefr(), current.voiceEnabled(), current.dailyGoalMin(), clean);
+                current.targetLang(), current.cefr(), current.voiceEnabled(), current.dailyGoalMin(), clean,
+                current.targetEndDate());
         profiles.save(updated);
         refresh(updated);
         return week();
@@ -148,6 +189,7 @@ public class ScheduleService {
     private ActivityType activityForSession(LessonSession session) {
         return switch (session.mode()) {
             case DRILL -> ActivityType.GRAMMAR;
+            case PLACEMENT -> ActivityType.CONVERSATION;
             default -> ActivityType.CONVERSATION;
         };
     }
@@ -187,7 +229,7 @@ public class ScheduleService {
         }
         List<Integer> days = profile.studyWeekdays();
         for (LocalDate date = from; !date.isAfter(end); date = date.plusDays(1)) {
-            if (!days.contains(date.getDayOfWeek().getValue())) {
+            if (afterTarget(profile, date) || !days.contains(date.getDayOfWeek().getValue())) {
                 continue;
             }
             if (schedule.find(profile.id(), date).isEmpty()) {
@@ -196,7 +238,8 @@ public class ScheduleService {
         }
     }
 
-    private static boolean visibleInMonth(ScheduleSlot slot, List<Integer> studyDays, LocalDate today) {
+    private static boolean visibleInMonth(ScheduleSlot slot, List<Integer> studyDays, LocalDate today,
+                                        LocalDate targetEnd) {
         SlotStatus status = slot.status();
         if (status == SlotStatus.DONE || status == SlotStatus.SKIPPED) {
             return true;
@@ -204,7 +247,29 @@ public class ScheduleService {
         if (!studyDays.contains(slot.slotDate().getDayOfWeek().getValue())) {
             return false;
         }
+        if (afterTarget(targetEnd, slot.slotDate())) {
+            return false;
+        }
         return !slot.slotDate().isBefore(today);
+    }
+
+    private static boolean afterTarget(UserProfile profile, LocalDate date) {
+        return afterTarget(profile.targetEndDate(), date);
+    }
+
+    private static boolean afterTarget(LocalDate targetEnd, LocalDate date) {
+        return targetEnd != null && date.isAfter(targetEnd);
+    }
+
+    private static LocalDate resolveTargetEnd(LearningPlan plan, UserProfile profile) {
+        if (plan.targetEndDate() != null && !plan.targetEndDate().isBlank()) {
+            try {
+                return LocalDate.parse(plan.targetEndDate().strip());
+            } catch (java.time.format.DateTimeParseException ex) {
+                return profile.targetEndDate();
+            }
+        }
+        return profile.targetEndDate();
     }
 
     public void refresh(UserProfile profile) {
@@ -223,6 +288,9 @@ public class ScheduleService {
                 if (slot.status() == SlotStatus.PLANNED && d.isBefore(today)) {
                     schedule.updateStatus(profile.id(), d, SlotStatus.SKIPPED);
                 }
+                continue;
+            }
+            if (afterTarget(profile, d)) {
                 continue;
             }
             if (d.isBefore(today)) {

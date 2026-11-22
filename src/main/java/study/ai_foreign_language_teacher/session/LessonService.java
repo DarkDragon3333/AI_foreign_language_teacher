@@ -5,7 +5,9 @@ import study.ai_foreign_language_teacher.config.TutorProperties;
 import study.ai_foreign_language_teacher.domain.Cefr;
 import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
+import study.ai_foreign_language_teacher.domain.LearningPlan;
 import study.ai_foreign_language_teacher.domain.LessonMode;
+import study.ai_foreign_language_teacher.domain.SessionPlanState;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.NotFoundException;
 import study.ai_foreign_language_teacher.domain.Role;
@@ -57,11 +59,13 @@ public class LessonService {
     private final ScenarioService scenarios;
     private final ScheduleService schedule;
     private final StructuredLessonService structured;
+    private final PlacementLessonService placement;
 
     public LessonService(ProfileRepository profiles, SessionRepository sessions, MessageRepository messages,
                          ErrorRepository errors, TurnEngine engine, ReviewService reviews, LlmClient llm,
                          ObjectMapper mapper, TutorProperties props, ScenarioService scenarios,
-                         ScheduleService schedule, StructuredLessonService structured) {
+                         ScheduleService schedule, StructuredLessonService structured,
+                         PlacementLessonService placement) {
         this.profiles = profiles;
         this.sessions = sessions;
         this.messages = messages;
@@ -74,6 +78,7 @@ public class LessonService {
         this.scenarios = scenarios;
         this.schedule = schedule;
         this.structured = structured;
+        this.placement = placement;
     }
 
     public LessonSession startSession(String cefr, String topic, String mode, String model, Integer durationMin) {
@@ -99,7 +104,10 @@ public class LessonService {
         }
         var plan = lessonMode == LessonMode.STRUCTURED
                 ? structured.initPlan(durationMin, java.time.Instant.now())
-                : null;
+                : lessonMode == LessonMode.PLACEMENT ? placement.initPlan() : null;
+        if (lessonMode == LessonMode.PLACEMENT) {
+            cleanTopic = "placement";
+        }
         LessonSession session = sessions.create(profile.id(), lessonMode, cleanTopic, level, cleanModel, plan);
         if (lessonMode == LessonMode.ROLEPLAY) {
             scenarios.start(session.id(), cleanTopic);
@@ -109,6 +117,30 @@ public class LessonService {
 
     public StructuredLessonService.PhaseView phaseView(LessonSession session) {
         return structured.view(session).orElse(null);
+    }
+
+    public PlacementLessonService.PlacementView placementView(LessonSession session) {
+        return placement.view(session).orElse(null);
+    }
+
+    public record SessionExtras(StructuredLessonService.PhaseView structured,
+                                PlacementLessonService.PlacementView placement) {
+        public static SessionExtras of(LessonSession session, LessonService lessons) {
+            return new SessionExtras(lessons.phaseView(session), lessons.placementView(session));
+        }
+    }
+
+    public LessonSession applyPlacementManual(long sessionId, String cefr) {
+        LessonSession session = getSession(sessionId);
+        if (session.mode() != LessonMode.PLACEMENT) {
+            throw new IllegalArgumentException("Session is not a placement onboarding");
+        }
+        UserProfile profile = profiles.getOrCreateDefault();
+        return placement.applyManualLevel(session, profile, cefr);
+    }
+
+    public void applyPlacementPlan(LearningPlan plan) {
+        schedule.applyLearningPlan(plan);
     }
 
     public LessonSession getSession(long id) {
@@ -145,7 +177,9 @@ public class LessonService {
         Instant endedAt = Instant.now();
         SessionSummary summary = SessionSummaries.build(session, endedAt, messages, errors);
         sessions.end(id, summary);
-        schedule.onSessionEnded(getSession(id));
+        if (getSession(id).mode() != LessonMode.PLACEMENT) {
+            schedule.onSessionEnded(getSession(id));
+        }
         scenarios.clear(id);
         return getSession(id);
     }
@@ -179,6 +213,11 @@ public class LessonService {
      * @param onText        получает текст ответа учителя по мере генерации (может быть null)
      */
     public Turn turn(long sessionId, String text, boolean hintRequested, Consumer<String> onText) {
+        return turn(sessionId, text, hintRequested, onText, null, null);
+    }
+
+    public Turn turn(long sessionId, String text, boolean hintRequested, Consumer<String> onText,
+                     Consumer<String> onPlacementPrompt, Consumer<String> onPlacementPassage) {
         LessonSession session = getSession(sessionId);
         if (session.endedAt() != null) {
             throw new IllegalArgumentException("Session " + sessionId + " is already finished");
@@ -204,12 +243,32 @@ public class LessonService {
             userMessage = messages.add(sessionId, Role.USER, "I need a hint, please.", null);
         }
 
+        List<ChatMessage> history = messages.lastN(sessionId, props.lesson().historyMessages());
+        SessionPlanState placementBefore = null;
+        if (!userText.isEmpty() && session.mode() == LessonMode.PLACEMENT) {
+            placementBefore = session.placementPlan();
+            String lastFollowUp = placement.lastFollowUpQuestion(history);
+            session = placement.advanceAfterUser(session, userText, lastFollowUp);
+        }
         session = structured.syncPhase(getSession(sessionId));
 
         UserProfile profile = profiles.getOrCreateDefault();
-        List<ChatMessage> history = messages.lastN(sessionId, props.lesson().historyMessages());
-        TurnEngine.Output out = engine.run(
-                new TurnEngine.Input(profile, session, history, userText, stuck, errors.top(profile.id(), 3), null), onText);
+        history = messages.lastN(sessionId, props.lesson().historyMessages());
+        TurnEngine.Output out;
+        try {
+            boolean placementStream = session.mode() == LessonMode.PLACEMENT;
+            out = engine.run(
+                    new TurnEngine.Input(profile, session, history, userText, stuck, errors.top(profile.id(), 3), null),
+                    onText,
+                    placementStream ? onPlacementPrompt : null,
+                    placementStream ? onPlacementPassage : null);
+        } catch (RuntimeException ex) {
+            if (placementBefore != null) {
+                sessions.updatePlanState(sessionId, placementBefore);
+            }
+            throw ex;
+        }
+        session = placement.ingestModelMeta(getSession(sessionId), out.firstRaw(), history);
         TeacherReply reply = out.reply();
         TeacherReply.Correction correction = reply.correction();
         List<LtMatch> found = out.trusted();

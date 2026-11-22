@@ -12,7 +12,10 @@ import study.ai_foreign_language_teacher.api.Dto.ChatRequest;
 import study.ai_foreign_language_teacher.api.Dto.ErrorView;
 import study.ai_foreign_language_teacher.api.Dto.MessageView;
 import study.ai_foreign_language_teacher.api.Dto.SessionView;
+import study.ai_foreign_language_teacher.domain.LessonMode;
+import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.NotFoundException;
+import study.ai_foreign_language_teacher.domain.PlacementStage;
 import study.ai_foreign_language_teacher.llm.LlmException;
 import study.ai_foreign_language_teacher.session.LessonService;
 
@@ -55,14 +58,25 @@ public class ChatController {
         emitter.onError(e -> clientGone.set(true));
         emitter.onTimeout(() -> clientGone.set(true));
 
+        LessonSession streamSession = lessons.getSession(request.sessionId());
+        var placementPlan = streamSession.placementPlan();
+        boolean placementStream = streamSession.mode() == LessonMode.PLACEMENT
+                && placementPlan != null
+                && placementPlan.stage() != PlacementStage.READY;
+
         executor.submit(() -> {
             try {
                 LessonService.Turn turn = lessons.turn(request.sessionId(), request.text(),
                         Boolean.TRUE.equals(request.hint()),
-                        text -> send(emitter, clientGone, "delta", Map.of("text", text)));
+                        text -> send(emitter, clientGone, "delta", Map.of("text", text)),
+                        placementStream
+                                ? text -> send(emitter, clientGone, "placement_prompt", Map.of("text", text)) : null,
+                        placementStream
+                                ? text -> send(emitter, clientGone, "placement_passage", Map.of("text", text)) : null);
 
                 Map<String, Object> body = new LinkedHashMap<>();
-                body.put("session", SessionView.of(turn.session(), lessons.phaseView(turn.session())));
+                body.put("session", SessionView.of(turn.session(),
+                        LessonService.SessionExtras.of(turn.session(), lessons)));
                 body.put("user", turn.userMessage() == null ? null : MessageView.of(turn.userMessage(), null));
                 body.put("teacher", MessageView.of(turn.teacherMessage(), turn.reply()));
                 if (turn.scenario() != null) {

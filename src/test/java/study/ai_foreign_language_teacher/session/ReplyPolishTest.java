@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReplyPolishTest {
 
     private static TeacherReply reply(String replyEn, String nextPrompt) {
-        return new TeacherReply(replyEn, "перевод", null, null, nextPrompt, List.of(), "conversation", "A1", 0);
+        return new TeacherReply(replyEn, "перевод", null, null, nextPrompt, List.of(), "conversation", "A1", 0, null);
     }
 
     @Test

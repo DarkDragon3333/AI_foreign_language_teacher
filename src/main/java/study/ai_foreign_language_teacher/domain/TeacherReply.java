@@ -16,7 +16,8 @@ public record TeacherReply(
         @JsonProperty("cards_to_review") List<String> cardsToReview,
         @JsonProperty("mode") String mode,
         @JsonProperty("cefr") String cefr,
-        @JsonProperty("support_level") Integer supportLevel) {
+        @JsonProperty("support_level") Integer supportLevel,
+        @JsonProperty("reading_passage") String readingPassage) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Correction(
@@ -47,10 +48,16 @@ public record TeacherReply(
             return replyEn == null ? "" : replyEn;
         }
         String answer = replyEn == null ? "" : replyEn.strip();
+        String passage = readingPassage == null ? "" : readingPassage.strip();
         String question = nextPrompt.strip();
-        if (answer.isEmpty()) {
-            return question;
+        StringBuilder sb = new StringBuilder();
+        if (!answer.isEmpty()) sb.append(answer);
+        if (!passage.isEmpty()) {
+            if (!sb.isEmpty()) sb.append(' ');
+            sb.append(passage);
         }
-        return answer + " " + question;
+        if (!sb.isEmpty()) sb.append(' ');
+        sb.append(question);
+        return sb.toString().strip();
     }
 }

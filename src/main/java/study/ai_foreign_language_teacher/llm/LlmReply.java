@@ -22,7 +22,8 @@ public record LlmReply(
         @JsonProperty("correction") Correction correction,
         @JsonProperty("explanation") Explanation explanation,
         @JsonProperty("follow_up_question") @JsonAlias("next_prompt") String followUpQuestion,
-        @JsonProperty("follow_up_ru") String followUpRu) {
+        @JsonProperty("follow_up_ru") String followUpRu,
+        @JsonProperty("reading_passage") String readingPassage) {
 
     public record Correction(
             @JsonProperty("errors") List<ErrorItem> errors,

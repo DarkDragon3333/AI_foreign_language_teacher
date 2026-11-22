@@ -27,7 +27,8 @@ public final class ReplyPolish {
             return reply; // показать больше нечего — пусть решает проверка на повтор
         }
         return new TeacherReply(reply.nextPrompt(), null, reply.correction(),
-                reply.explanation(), null, reply.cardsToReview(), reply.mode(), reply.cefr(), reply.supportLevel());
+                reply.explanation(), null, reply.cardsToReview(), reply.mode(), reply.cefr(), reply.supportLevel(),
+                reply.readingPassage());
     }
 
     /** Учитель повторил свою недавнюю реплику или просто вернул ученику его же слова. */

@@ -38,7 +38,7 @@ public class SessionController {
     }
 
     private SessionView view(LessonSession s) {
-        return SessionView.of(s, structured.view(s).orElse(null));
+        return SessionView.of(s, LessonService.SessionExtras.of(s, lessons));
     }
 
     /** Начать урок. Все поля необязательны: уровень берётся из профиля, режим — conversation. */
@@ -73,6 +73,15 @@ public class SessionController {
     @PostMapping("/{id}/end")
     public SessionView end(@PathVariable long id) {
         return view(lessons.endSession(id));
+    }
+
+  /** Пропуск теста: ручной CEFR и типовой план. */
+    @PostMapping("/{id}/placement/manual")
+    public SessionView placementManual(@PathVariable long id, @RequestBody LevelRequest request) {
+        if (request.cefr() == null || request.cefr().isBlank()) {
+            throw new IllegalArgumentException("cefr is required");
+        }
+        return view(lessons.applyPlacementManual(id, request.cefr()));
     }
 
     private TeacherReply reply(ChatMessage m) {

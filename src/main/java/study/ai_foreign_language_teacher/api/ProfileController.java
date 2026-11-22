@@ -9,10 +9,12 @@ import study.ai_foreign_language_teacher.api.Dto.ProfileRequest;
 import study.ai_foreign_language_teacher.api.Dto.ProfileView;
 import study.ai_foreign_language_teacher.config.TutorProperties;
 import study.ai_foreign_language_teacher.domain.Cefr;
+import study.ai_foreign_language_teacher.domain.DailyGoalMinutes;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.memory.ProfileRepository;
 import study.ai_foreign_language_teacher.schedule.ScheduleService;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -43,13 +45,16 @@ public class ProfileController {
         }
         int goal = current.dailyGoalMin();
         if (request.dailyGoalMin() != null) {
+            DailyGoalMinutes.requireValid(request.dailyGoalMin());
             goal = request.dailyGoalMin();
-            if (goal != 5 && goal != 10 && goal != 15 && goal != 25) {
-                throw new IllegalArgumentException("Daily goal must be 5, 10, 15 or 25 minutes");
-            }
         }
         List<Integer> weekdays = request.studyWeekdays() == null
                 ? current.studyWeekdays() : ScheduleService.normalizeWeekdays(request.studyWeekdays());
+        LocalDate targetEnd = current.targetEndDate();
+        if (request.targetEndDate() != null) {
+            String raw = request.targetEndDate().strip();
+            targetEnd = raw.isEmpty() ? null : LocalDate.parse(raw);
+        }
         UserProfile updated = new UserProfile(
                 current.id(),
                 name,
@@ -58,7 +63,8 @@ public class ProfileController {
                 request.cefr() == null ? current.cefr() : Cefr.parse(request.cefr()),
                 request.voiceEnabled() == null ? current.voiceEnabled() : request.voiceEnabled(),
                 goal,
-                weekdays);
+                weekdays,
+                targetEnd);
         return ProfileView.of(profiles.save(updated), props.ollama().model());
     }
 }

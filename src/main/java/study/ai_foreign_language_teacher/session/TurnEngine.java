@@ -6,6 +6,8 @@ import study.ai_foreign_language_teacher.domain.ChatMessage;
 import study.ai_foreign_language_teacher.domain.ErrorEvent;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
+import study.ai_foreign_language_teacher.domain.PlacementPlanState;
+import study.ai_foreign_language_teacher.domain.PlacementStage;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.RuleCard;
 import study.ai_foreign_language_teacher.domain.TeacherReply;
@@ -14,6 +16,7 @@ import study.ai_foreign_language_teacher.llm.LlmClient;
 import study.ai_foreign_language_teacher.llm.LlmMessage;
 import study.ai_foreign_language_teacher.llm.PromptBuilder;
 import study.ai_foreign_language_teacher.llm.ReplyParser;
+import study.ai_foreign_language_teacher.llm.PlacementReplySchema;
 import study.ai_foreign_language_teacher.llm.ReplySchema;
 import study.ai_foreign_language_teacher.llm.ReplyTextStream;
 import study.ai_foreign_language_teacher.memory.rules.RuleRetriever;
@@ -21,6 +24,7 @@ import study.ai_foreign_language_teacher.nlp.AgreementPatterns;
 import study.ai_foreign_language_teacher.nlp.GrammarChecker;
 import study.ai_foreign_language_teacher.nlp.LtMatch;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -69,6 +73,11 @@ public class TurnEngine {
     }
 
     public Output run(Input in, Consumer<String> onText) {
+        return run(in, onText, null, null);
+    }
+
+    public Output run(Input in, Consumer<String> onText, Consumer<String> onPlacementPrompt,
+                      Consumer<String> onPlacementPassage) {
         long started = System.nanoTime();
         LessonSession session = in.session();
         String userText = in.userText() == null ? "" : in.userText();
@@ -77,7 +86,8 @@ public class TurnEngine {
         // LanguageTool первый: детерминированные ошибки находим до LLM и передаём ей как факты
         boolean checkable = !userText.isEmpty() && !in.stuck();
         List<LtMatch> found = checkable ? AgreementPatterns.supplement(userText, checker.check(userText)) : List.of();
-        List<RuleCard> cards = rules.retrieve(session.cefr(), session.mode(), session.topic(), userText,
+        boolean placement = session.mode() == LessonMode.PLACEMENT;
+        List<RuleCard> cards = placement ? List.of() : rules.retrieve(session.cefr(), session.mode(), session.topic(), userText,
                 checkable ? found : null, in.stuck());
 
         // что учитель уже говорил: чтобы не спрашивал одно и то же по кругу
@@ -87,14 +97,28 @@ public class TurnEngine {
                 checkable ? found : null, in.weak(), recent, cards, session.id());
 
         StringBuilder streamed = new StringBuilder();
-        Consumer<String> stream = new ReplyTextStream("answer_en", chunk -> {
+        ReplyTextStream answerStream = new ReplyTextStream("answer_en", chunk -> {
             streamed.append(chunk);
             if (onText != null) {
                 onText.accept(chunk);
             }
         });
+        ReplyTextStream promptStream = placement && onPlacementPrompt != null
+                ? new ReplyTextStream("follow_up_question", onPlacementPrompt) : null;
+        ReplyTextStream passageStream = placement && onPlacementPassage != null
+                ? new ReplyTextStream("reading_passage", onPlacementPassage) : null;
+        Consumer<String> stream = chunk -> {
+            answerStream.accept(chunk);
+            if (promptStream != null) {
+                promptStream.accept(chunk);
+            }
+            if (passageStream != null) {
+                passageStream.accept(chunk);
+            }
+        };
         double temperature = session.mode().temperature();
-        LlmClient.Call first = llm.chat(session.model(), prompt, temperature, ReplySchema.schema(), in.seed(), stream);
+        var schema = placement ? PlacementReplySchema.schema() : ReplySchema.schema();
+        LlmClient.Call first = llm.chat(session.model(), prompt, temperature, schema, in.seed(), stream);
         long evalTokens = first.evalTokens();
         long evalNanos = first.evalNanos();
         int calls = 1;
@@ -111,7 +135,7 @@ public class TurnEngine {
         boolean stale = ReplyPolish.isStale(parsed, userText, recent);
         if (stale) {
             retried = true;
-            LlmClient.Call second = llm.chat(session.model(), prompt, Math.min(1.0, temperature + 0.3), ReplySchema.schema(),
+            LlmClient.Call second = llm.chat(session.model(), prompt, Math.min(1.0, temperature + 0.3), schema,
                     in.seed() == null ? null : in.seed() + 1, null);
             evalTokens += second.evalTokens();
             evalNanos += second.evalNanos();
@@ -124,13 +148,45 @@ public class TurnEngine {
             }
         }
 
+        PlacementPlanState placementPlan = session.placementPlan();
+        if (placement && placementPlan != null && placementPlan.stage() == PlacementStage.TEST
+                && !PlacementLessonService.isValidPlacementTask(parsed.nextPrompt())) {
+            TeacherReply recovered = PlacementLessonService.recoverTaskFromAnswer(parsed);
+            if (recovered != null && PlacementLessonService.isValidPlacementTask(recovered.nextPrompt())) {
+                parsed = recovered;
+            } else {
+            TeacherReply merged = PlacementLessonService.mergeInvalidFollowUp(parsed);
+            List<LlmMessage> retryPrompt = new ArrayList<>(prompt);
+            retryPrompt.add(new LlmMessage("assistant", merged.displayText()));
+            retryPrompt.add(new LlmMessage("user", PlacementLessonService.PLACEMENT_TEST_RETRY_HINT));
+            LlmClient.Call fix = llm.chat(session.model(), retryPrompt, Math.min(1.0, temperature + 0.15), schema,
+                    in.seed() == null ? null : in.seed() + 2, null);
+            evalTokens += fix.evalTokens();
+            evalNanos += fix.evalNanos();
+            calls++;
+            retried = true;
+            TeacherReply fixed = ReplyPolish.dropEcho(
+                    parser.parse(fix.text(), null, session.cefr(), session.mode(), supportLevel), userText);
+            if (PlacementLessonService.isValidPlacementTask(fixed.nextPrompt())) {
+                parsed = fixed;
+            } else {
+                parsed = PlacementLessonService.withReservedTask(fixed, placementPlan, session.cefr().name());
+            }
+            }
+        }
+
+        if (placement && placementPlan != null) {
+            parsed = PlacementLessonService.polishPlacementReply(parsed, placementPlan);
+        }
+
         // Исправление показываем, только если оно подтверждено LT или модель точно указала ошибку
         List<LtMatch> trusted = CorrectionPolicy.confirm(found, parsed.correction());
-        TeacherReply.Correction correction = checkable ? CorrectionPolicy.decide(userText, parsed.correction(), trusted) : null;
+        TeacherReply.Correction correction = (checkable && !placement)
+                ? CorrectionPolicy.decide(userText, parsed.correction(), trusted) : null;
         // к опечатке правило не нужно; правило показываем к грамматической ошибке, по просьбе и в режиме объяснения
         boolean onlySpelling = correction != null && !trusted.isEmpty() && trusted.stream().allMatch(LtMatch::spelling)
                 && correction.errors().size() == trusted.size();
-        boolean explain = (correction != null && !onlySpelling) || in.stuck() || session.mode() == LessonMode.EXPLAIN;
+        boolean explain = !placement && ((correction != null && !onlySpelling) || in.stuck() || session.mode() == LessonMode.EXPLAIN);
         boolean asked = RuleRetriever.grammarQuestion(userText);
         boolean genericExplanation = in.stuck() || session.mode() == LessonMode.EXPLAIN;
         TeacherReply.Explanation explanation = parsed.explanation();
@@ -151,7 +207,7 @@ public class TurnEngine {
         }
         TeacherReply reply = new TeacherReply(parsed.replyEn(), replyRu, correction,
                 explanation, parsed.nextPrompt(), slugs,
-                parsed.mode(), parsed.cefr(), parsed.supportLevel());
+                parsed.mode(), parsed.cefr(), parsed.supportLevel(), parsed.readingPassage());
 
         return new Output(reply, trusted, first.text(), fromModel, fallback, echoDropped, retried, stale,
                 calls, evalTokens, evalNanos, (System.nanoTime() - started) / 1_000_000);

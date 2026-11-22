@@ -10,7 +10,7 @@ import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.SessionSummary;
-import study.ai_foreign_language_teacher.domain.StructuredPlanState;
+import study.ai_foreign_language_teacher.domain.SessionPlanState;
 import study.ai_foreign_language_teacher.domain.UserProfile;
 import study.ai_foreign_language_teacher.memory.ErrorRepository;
 import study.ai_foreign_language_teacher.memory.MessageRepository;
@@ -54,7 +54,7 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
             TutorProperties.Lesson l = props.lesson();
             profile = new UserProfile(1, "Student", l.nativeLang(), l.targetLang(),
                     Cefr.parseOr(l.defaultCefr(), Cefr.B1), false, UserProfile.DEFAULT_DAILY_GOAL_MIN,
-                    UserProfile.DEFAULT_STUDY_WEEKDAYS);
+                    UserProfile.DEFAULT_STUDY_WEEKDAYS, null);
         }
         return profile;
     }
@@ -67,7 +67,7 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
 
     @Override
     public LessonSession create(long userId, LessonMode mode, String topic, Cefr cefr, String model,
-                                StructuredPlanState planState) {
+                                SessionPlanState planState) {
         LessonSession s = new LessonSession(sessionSeq.incrementAndGet(), userId, mode, topic, cefr, 0, Instant.now(),
                 null, model, null, planState);
         sessions.put(s.id(), s);
@@ -75,7 +75,7 @@ public class InMemoryStore implements ProfileRepository, SessionRepository, Mess
     }
 
     @Override
-    public void updatePlanState(long id, StructuredPlanState planState) {
+    public void updatePlanState(long id, SessionPlanState planState) {
         sessions.computeIfPresent(id, (k, s) -> s.withPlanState(planState));
     }
 

@@ -1,12 +1,20 @@
 package study.ai_foreign_language_teacher.domain;
 
+import java.util.regex.Pattern;
+
 /** Шкала уровней A1–C2 и то, как учитель ведёт себя на каждом (раздел 7 ARCHITECTURE.md). */
 public enum Cefr {
     A1, A2, B1, B2, C1, C2;
 
+    private static final Pattern CEFR_CODE = Pattern.compile("\\b(A1|A2|B1|B2|C1|C2)\\b", Pattern.CASE_INSENSITIVE);
+
     public static Cefr parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("CEFR level is required (A1..C2)");
+        }
+        var matcher = CEFR_CODE.matcher(value.strip());
+        if (matcher.find()) {
+            return valueOf(matcher.group(1).toUpperCase());
         }
         try {
             return valueOf(value.trim().toUpperCase());

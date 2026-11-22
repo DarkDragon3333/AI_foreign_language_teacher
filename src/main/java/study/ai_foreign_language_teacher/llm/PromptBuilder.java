@@ -7,6 +7,8 @@ import study.ai_foreign_language_teacher.domain.LessonPhase;
 import study.ai_foreign_language_teacher.domain.LessonSession;
 import study.ai_foreign_language_teacher.domain.LessonMode;
 import study.ai_foreign_language_teacher.domain.StructuredPlanState;
+import study.ai_foreign_language_teacher.domain.PlacementPlanState;
+import study.ai_foreign_language_teacher.session.PlacementLessonService;
 import study.ai_foreign_language_teacher.session.StructuredLessonPhases;
 import study.ai_foreign_language_teacher.domain.Role;
 import study.ai_foreign_language_teacher.domain.RoleScenario;
@@ -34,10 +36,12 @@ public class PromptBuilder {
 
     private final ObjectMapper mapper;
     private final ScenarioService scenarios;
+    private final PlacementLessonService placement;
 
-    public PromptBuilder(ObjectMapper mapper, ScenarioService scenarios) {
+    public PromptBuilder(ObjectMapper mapper, ScenarioService scenarios, PlacementLessonService placement) {
         this.mapper = mapper;
         this.scenarios = scenarios;
+        this.placement = placement;
     }
 
     /**
@@ -89,6 +93,9 @@ public class PromptBuilder {
     }
 
     String systemPrompt(UserProfile profile, LessonSession session, boolean stuck) {
+        if (session.mode() == LessonMode.PLACEMENT) {
+            return placementSystemPrompt(session, stuck);
+        }
         String topic = session.topic() == null || session.topic().isBlank() ? "free choice — follow the learner's interests" : session.topic();
         if (session.mode() == LessonMode.ROLEPLAY) {
             topic = scenarios.promptContext(session).map(RoleScenario::topicLine).orElse(topic);
@@ -135,11 +142,39 @@ public class PromptBuilder {
         return sb.toString();
     }
 
+    String placementSystemPrompt(LessonSession session, boolean stuck) {
+        PlacementPlanState plan = session.placementPlan() != null ? session.placementPlan() : PlacementPlanState.start();
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                You are a friendly English teacher running placement onboarding for a Russian-speaking learner.
+                Do not use fixed CEFR vocabulary lists from the profile.
+                Follow ONLY the current step block below — do not restart earlier phases or mention steps that are already finished.
+
+                LANGUAGE (strict)
+                - Write ALL teacher lines in English ONLY: answer_en, follow_up_question, and any English task text.
+                - Never switch to Spanish or other languages, even if the learner answers in Russian or another language.
+                - On About you (survey): follow_up_question must be English only — never Spanish; use the exact survey wording from the step block when given.
+
+                TURN SHAPE (critical for small models)
+                - Never invent learner replies or put words in the learner's mouth.
+                - Never answer your own question in the same turn (forbidden: "Question? Great! Next question?").
+                - answer_en: exactly one short reaction — comment, praise, or brief correction. No question in answer_en unless the step block says follow_up_question must be empty.
+                - follow_up_question (shown as next_prompt): exactly ONE question or task unless the step block says it must be empty. It must contain "?" or options A) B) C). Never apologize or ask the learner to repeat instead of a task.
+                - reading_passage: empty except on the Reading test block, where it is 3–5 sentences and the question stays in follow_up_question.
+                - answer_ru optional; use when the learner seems stuck (support rules below).
+                - Plain text only in displayed fields; JSON fields follow the schema.
+                """);
+        sb.append("\n").append(placement.stepPromptBlock(plan));
+        sb.append("\nSUPPORT\n").append(supportRule(session.supportLevel(), stuck));
+        sb.append("\nAnswer with one JSON object only, following the given schema.\n");
+        return sb.toString();
+    }
+
     String structuredLessonBlock(LessonSession session) {
         if (session.mode() != LessonMode.STRUCTURED) {
             return "";
         }
-        StructuredPlanState plan = session.planState();
+        StructuredPlanState plan = session.structuredPlan();
         if (plan == null) {
             return "";
         }

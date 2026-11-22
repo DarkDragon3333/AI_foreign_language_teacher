@@ -17,7 +17,8 @@ class PromptBuilderStructuredTest {
 
     @Test
     void feedbackPhaseForbidsNewExercises() {
-        PromptBuilder builder = new PromptBuilder(new tools.jackson.databind.ObjectMapper(), mock(ScenarioService.class));
+        PromptBuilder builder = new PromptBuilder(new tools.jackson.databind.ObjectMapper(), mock(ScenarioService.class),
+                mock(study.ai_foreign_language_teacher.session.PlacementLessonService.class));
         Instant start = Instant.now().minusSeconds(20 * 60);
         LessonSession session = new LessonSession(
                 1, 1, LessonMode.STRUCTURED, "travel", Cefr.B1, 0, start, null, null, null,

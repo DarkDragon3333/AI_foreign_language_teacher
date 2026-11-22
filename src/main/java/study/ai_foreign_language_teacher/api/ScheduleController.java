@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import study.ai_foreign_language_teacher.api.Dto.ApplyLearningPlanRequest;
 import study.ai_foreign_language_teacher.api.Dto.CompleteActivityRequest;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleSlotPatch;
 import study.ai_foreign_language_teacher.api.Dto.ScheduleMonthView;
@@ -16,6 +17,7 @@ import study.ai_foreign_language_teacher.api.Dto.ScheduleWeekView;
 import study.ai_foreign_language_teacher.api.Dto.StudyWeekdaysRequest;
 import study.ai_foreign_language_teacher.domain.ActivityType;
 import study.ai_foreign_language_teacher.domain.SlotStatus;
+import study.ai_foreign_language_teacher.session.LessonService;
 import study.ai_foreign_language_teacher.schedule.ScheduleService;
 
 import java.time.LocalDate;
@@ -25,9 +27,11 @@ import java.time.LocalDate;
 public class ScheduleController {
 
     private final ScheduleService schedule;
+    private final LessonService lessons;
 
-    public ScheduleController(ScheduleService schedule) {
+    public ScheduleController(ScheduleService schedule, LessonService lessons) {
         this.schedule = schedule;
+        this.lessons = lessons;
     }
 
     @GetMapping("/week")
@@ -57,6 +61,16 @@ public class ScheduleController {
         ActivityType type = body == null || body.activityType() == null ? null : ActivityType.parse(body.activityType());
         SlotStatus status = body == null || body.status() == null ? null : SlotStatus.parse(body.status());
         return schedule.patchSlot(date, type, status);
+    }
+
+    @PostMapping("/apply-plan")
+    public ScheduleMonthView applyPlan(@RequestBody ApplyLearningPlanRequest body) {
+        if (body == null) {
+            throw new IllegalArgumentException("plan body is required");
+        }
+        lessons.applyPlacementPlan(body.toPlan());
+        var now = java.time.LocalDate.now();
+        return ScheduleMonthView.of(schedule.month(now.getYear(), now.getMonthValue()));
     }
 
     @PostMapping("/complete")

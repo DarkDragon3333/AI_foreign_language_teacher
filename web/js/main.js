@@ -1,11 +1,23 @@
-import { api, chatTurn, transcribe } from './api.js?v=20';
-import { userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking } from './render.js?v=18';
+import { api, chatTurn, transcribe } from './api.js?v=22';
+import {
+  userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking,
+  lockPlacementCard, lockPlacementScheduleCard,
+  createBrandDatePicker, isoLocalDate,
+} from './render.js?v=30';
 import { openReview, refreshReviewCount } from './review.js?v=19';
 import { VoiceDuplex } from './voice.js?v=18';
 import { stopActivePractice, wirePracticeControls } from './practice.js?v=31';
 import { enterPracticeScreen, focusPracticeTab, pausePracticeScreen } from './practice-ui.js?v=2';
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const PLACEMENT_LEVEL_LABELS = {
+  A1: 'A1 · Beginner',
+  A2: 'A2 · Elementary',
+  B1: 'B1 · Intermediate',
+  B2: 'B2 · Upper intermediate',
+  C1: 'C1 · Advanced',
+  C2: 'C2 · Proficient',
+};
 const LEVELS_INFO = {
   A1: { name: 'Beginner', blurb: 'Introduce yourself & use everyday words' },
   A2: { name: 'Elementary', blurb: 'Talk about routines & familiar topics' },
@@ -16,7 +28,7 @@ const LEVELS_INFO = {
 };
 const MODE_NAMES = {
   conversation: 'Conversation', explain: 'Explain', correct: 'Check', drill: 'Drill', roleplay: 'Role-play',
-  structured: 'Guided lesson',
+  structured: 'Guided lesson', placement: 'Level check',
 };
 const MODE_HEADINGS = {
   conversation: 'Start a conversation',
@@ -25,7 +37,12 @@ const MODE_HEADINGS = {
   drill: 'A short drill',
   roleplay: 'Play a scene',
   structured: 'Guided lesson',
+  placement: 'Find your level',
 };
+const PLACEMENT_STEP_TOTAL = 11;
+const GOAL_MINUTES = [5, 10, 15, 20, 25, 30, 45, 60];
+let placementSpeakInput = null;
+let calTargetPicker = null;
 const STRUCTURED_PHASES = ['warmup', 'input', 'practice', 'feedback'];
 const HINT_STEPS = ['· rule', '· example', '· answer', '· answer'];
 const C_LEVEL_NOTE = 'At C1 and C2 this small local model writes more simply than a human teacher. Nuance and idioms are weaker.';
@@ -52,8 +69,9 @@ const state = {
   scenarios: [],
   scenarioProgress: null,
   starting: false,
-  goalMin: 10,
+  goalMin: 15,
   studyWeekdays: [1, 2, 3, 4, 5],
+  targetEndDate: null,
   lessonTimerMs: 0,
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth() + 1,
@@ -358,9 +376,18 @@ $('cal-grid').addEventListener('keydown', (event) => {
   next.focus();
 });
 
+function ensureCalTargetPicker() {
+  const wrap = $('cal-target-end-wrap');
+  if (!wrap || calTargetPicker) return;
+  calTargetPicker = createBrandDatePicker({ min: isoLocalDate(new Date()) });
+  wrap.append(calTargetPicker.root);
+}
+
 $('cal-settings').addEventListener('click', () => {
   weekdayDraft = [...state.studyWeekdays];
   paintWeekdayDraft();
+  ensureCalTargetPicker();
+  calTargetPicker?.setValue(state.targetEndDate || '');
   $('cal-settings').setAttribute('aria-expanded', 'true');
   $('cal-settings-dialog').showModal();
 });
@@ -385,8 +412,11 @@ $('cal-settings-form').addEventListener('submit', async (event) => {
   const button = $('cal-settings-save');
   button.disabled = true;
   try {
+    const targetEndDate = calTargetPicker?.getValue()?.trim() || '';
+    await api.updateProfile({ studyWeekdays: weekdayDraft, targetEndDate });
     const saved = await api.scheduleWeekdays(weekdayDraft);
     state.studyWeekdays = saved.studyWeekdays || weekdayDraft;
+    state.targetEndDate = targetEndDate || null;
     $('cal-settings-dialog').close();
     await loadSchedule();
   } catch (e) {
@@ -494,6 +524,13 @@ function progressCounts() {
   if (state.session?.mode === 'roleplay' && state.scenarioProgress?.total) {
     return { done: state.scenarioProgress.done, total: state.scenarioProgress.total };
   }
+  if (state.session?.mode === 'placement') {
+    const idx = state.session.placementStepIndex || 1;
+    return {
+      done: Math.min(idx, PLACEMENT_STEP_TOTAL),
+      total: state.session.placementStepTotal || PLACEMENT_STEP_TOTAL,
+    };
+  }
   if (state.session?.mode === 'structured' && state.session.lessonPhase) {
     const idx = STRUCTURED_PHASES.indexOf(state.session.lessonPhase);
     const done = idx >= 0 ? idx + 1 : 1;
@@ -506,6 +543,9 @@ function progressCounts() {
 function progressLabel(counts) {
   if (state.session?.mode === 'roleplay' && state.scenarioProgress) {
     return counts.done + ' of ' + counts.total + ' goals';
+  }
+  if (state.session?.mode === 'placement') {
+    return 'Step ' + counts.done + ' of ' + counts.total;
   }
   if (state.session?.mode === 'structured') {
     return 'Phase ' + counts.done + ' of ' + counts.total;
@@ -701,6 +741,205 @@ function syncStartForm() {
   if (!state.session) renderHeroCopy();
 }
 
+function placementUiStage(session) {
+  const idx = session?.placementStepIndex || 1;
+  if (idx >= PLACEMENT_STEP_TOTAL || session?.placementStage === 'plan' || session?.placementStage === 'ready') {
+    return 'plan';
+  }
+  if (idx >= 9 || session?.placementStage === 'survey') return 'survey';
+  return 'test';
+}
+
+function updatePlacementPanel(session) {
+  const wrap = $('placement-phase-wrap');
+  if (!wrap) return;
+  const on = session?.mode === 'placement';
+  wrap.hidden = !on;
+  if (!on) return;
+  const stage = placementUiStage(session);
+  for (const seg of wrap.querySelectorAll('[data-placement-stage]')) {
+    seg.classList.toggle('is-current', seg.dataset.placementStage === stage);
+  }
+  const label = $('placement-step-label');
+  if (label) label.textContent = session.placementStepLabel || '';
+}
+
+function summarizePlacementPlan(plan) {
+  if (!plan) return '';
+  const days = (plan.studyWeekdays || []).map((d) => DOW_LABELS[d - 1] || d).join(', ');
+  const slots = plan.monthSlots?.length || 0;
+  const goal = plan.dailyGoalMin || state.goalMin || 15;
+  const wd = (plan.studyWeekdays?.length ? plan.studyWeekdays : state.studyWeekdays) || [1, 2, 3, 4, 5];
+  const dayLabels = wd.map((d) => DOW_LABELS[d - 1] || d).join(', ');
+  const end = plan.targetEndDate || state.targetEndDate;
+  const endNote = end ? ` · until ${end}` : '';
+  return `${goal} min/day · ${dayLabels || days || 'Mon–Fri'} · ${slots} sessions this month${endNote}`;
+}
+
+function placementRenderMeta(session, messageIndex, messages) {
+  const idx = session?.placementStepIndex || 1;
+  const total = session?.placementStepTotal || PLACEMENT_STEP_TOTAL;
+  const label = session?.placementStepLabel || 'Placement';
+  const unansweredTeacher = placementPendingTeacherIndex(messages);
+  if (messageIndex === unansweredTeacher) {
+    return `${idx} / ${total} · ${label}`;
+  }
+  let step = 0;
+  for (let i = 0; i <= messageIndex; i++) {
+    const m = messages[i];
+    if (m?.role === 'teacher' && teacherPlacementPrompt(m)) step += 1;
+  }
+  return `${step || idx} / ${total} · Placement`;
+}
+
+function teacherPlacementPrompt(teacherMsg) {
+  const reply = teacherMsg?.reply;
+  if (!reply) return '';
+  return (reply.next_prompt || '').trim() || (reply.reply_en || '').trim();
+}
+
+function placementUserAnswerInCard(session, messages, index) {
+  if (session?.mode !== 'placement' || session?.placementPlanReady) return false;
+  if (messages[index]?.role !== 'user') return false;
+  const prev = messages[index - 1];
+  return prev?.role === 'teacher' && !!teacherPlacementPrompt(prev);
+}
+
+function placementPendingTeacherIndex(messages) {
+  if (!messages?.length) return -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'teacher' && teacherPlacementPrompt(m)) {
+      if (i === messages.length - 1) return i;
+      if (messages[i + 1]?.role !== 'user') return i;
+      return -1;
+    }
+  }
+  return -1;
+}
+
+function isPlacementScheduleStep(session) {
+  return session?.mode === 'placement'
+    && !session?.placementPlanReady
+    && session.placementStepIndex === 10;
+}
+
+function placementMessageStepIndex(messages, messageIndex) {
+  let step = 0;
+  for (let i = 0; i <= messageIndex; i++) {
+    const m = messages[i];
+    if (m?.role === 'teacher' && teacherPlacementPrompt(m)) step += 1;
+  }
+  return step;
+}
+
+function placementScheduleWidgetFor(session, messageIndex, messages, active, lockedAnswer) {
+  if (session?.mode !== 'placement' || session?.placementPlanReady) return false;
+  const stage = session?.placementStage || '';
+  if (stage === 'plan' || stage === 'ready') return false;
+  if (active && isPlacementScheduleStep(session)) return true;
+  return placementMessageStepIndex(messages, messageIndex) === 10
+    && !!(lockedAnswer && /days a week/i.test(lockedAnswer));
+}
+
+function placementRenderOpts(session, messageIndex, messages) {
+  if (session?.mode !== 'placement' || session?.placementPlanReady) return {};
+  const pending = placementPendingTeacherIndex(messages);
+  const active = messageIndex === pending;
+  let lockedAnswer = active ? null : (messages[messageIndex + 1]?.role === 'user' ? messages[messageIndex + 1].text : null);
+  if (lockedAnswer != null) {
+    const t = lockedAnswer.trim();
+    if (!t || t === '-' || t === '—' || t === '–') lockedAnswer = null;
+  }
+  const scheduleWidget = placementScheduleWidgetFor(session, messageIndex, messages, active, lockedAnswer);
+  return {
+    placement: true,
+    stepMeta: placementRenderMeta(session, messageIndex, messages),
+    active,
+    lockedAnswer,
+    scheduleWidget,
+    scheduleDefaults: {
+      weekdays: state.studyWeekdays, goalMin: state.goalMin, targetEndDate: state.targetEndDate,
+    },
+    onScheduleSubmit: scheduleWidget && active ? submitPlacementSchedule : null,
+    onSubmit: scheduleWidget ? null : (active ? submitPlacementAnswer : null),
+    onSpeak: scheduleWidget ? null : (active ? startPlacementSpeak : null),
+  };
+}
+
+function syncPlacementComposer() {
+  const form = $('chat-form');
+  if (!form) return;
+  const on = state.session?.mode === 'placement' && !state.session?.placementPlanReady;
+  form.classList.toggle('placement-composer-slim', on);
+}
+
+function submitPlacementAnswer(text, card) {
+  if (state.busy || !state.session) return;
+  const trimmed = (text || '').trim();
+  if (!trimmed || /^[-—–.]+$/.test(trimmed)) return;
+  lockPlacementCard(card, trimmed);
+  scrollDown();
+  turn(trimmed, false, false, { userAlreadyShown: true });
+}
+
+async function submitPlacementSchedule({ weekdays, goalMin, targetEndDate, summary }, card) {
+  if (state.busy || !state.session) return;
+  lockPlacementScheduleCard(card, summary);
+  try {
+    await api.updateProfile({
+      dailyGoalMin: goalMin, studyWeekdays: weekdays, targetEndDate: targetEndDate || '',
+    });
+    state.goalMin = goalMin;
+    state.studyWeekdays = weekdays;
+    state.targetEndDate = targetEndDate || null;
+    if ($('goal-select')) $('goal-select').value = String(goalMin);
+  } catch (e) {
+    fatal(e.message);
+    return;
+  }
+  scrollDown();
+  turn(summary, false, false, { userAlreadyShown: true, suppressScheduleWidget: true });
+}
+
+function startPlacementSpeak(card) {
+  if (state.busy || talk.recorder) return;
+  placementSpeakInput = card?.querySelector('.grammar-answer-input');
+  startTalk();
+}
+
+function showPlacementResult(session) {
+  const ready = session?.placementPlanReady && session.placementPlan;
+  const card = $('placement-result');
+  const form = $('chat-form');
+  if (!card || !form) return;
+  if (!ready) {
+    card.hidden = true;
+    form.hidden = false;
+    return;
+  }
+  card.hidden = false;
+  form.hidden = true;
+  const recommended = session.placementAssessedLevel || session.cefr || state.level;
+  const pick = $('placement-level-pick');
+  for (const opt of pick.options) {
+    const base = PLACEMENT_LEVEL_LABELS[opt.value] || opt.textContent.replace(/\s*\(Recommended\)\s*$/, '');
+    opt.textContent = opt.value === recommended ? `${base} (Recommended)` : base;
+  }
+  pick.value = LEVELS.includes(recommended) ? recommended : state.level;
+  const badge = $('placement-recommended-badge');
+  badge.textContent = `Recommended: ${recommended}`;
+  badge.hidden = false;
+  $('placement-result-lead').textContent = 'We estimated your level from the test. You can adjust it before saving.';
+  const planView = session.placementPlan ? {
+    ...session.placementPlan,
+    dailyGoalMin: state.goalMin,
+    studyWeekdays: state.studyWeekdays,
+  } : null;
+  $('placement-plan-summary').textContent = summarizePlacementPlan(planView);
+  syncPlacementComposer();
+}
+
 function updateStructuredPanel(session) {
   const wrap = $('structured-phase-wrap');
   if (!wrap) return;
@@ -748,7 +987,10 @@ async function loadScenarios() {
 
 function updateChrome() {
   const inLesson = state.tab === 'lesson';
+  const inPlacement = inLesson && state.session?.mode === 'placement';
   const inPractice = PRACTICE_TABS.has(state.tab);
+  document.querySelector('.app')?.classList.toggle('placement-onboarding', inPlacement);
+  $('placement-manual').hidden = !inPlacement || $('placement-result')?.hidden === false;
   $('exit-lesson').hidden = !inLesson;
   $('exit-practice').hidden = !inPractice || inLesson;
   const stopBtn = $('stop-practice');
@@ -828,6 +1070,49 @@ async function selectLevel(level) {
     renderHeroCopy();
   } catch (e) {
     fatal(e.message);
+  }
+}
+
+async function beginPlacement() {
+  return beginLesson({ mode: 'placement', topic: 'placement', cefr: state.level });
+}
+
+async function applyPlacementPlan() {
+  const session = state.session;
+  const level = $('placement-level-pick').value;
+  const plan = session?.placementPlan;
+  if (!plan) {
+    fatal('Plan is not ready yet.');
+    return;
+  }
+  $('placement-apply').disabled = true;
+  try {
+    const planToApply = {
+      ...plan,
+      dailyGoalMin: state.goalMin,
+      studyWeekdays: state.studyWeekdays,
+      targetEndDate: state.targetEndDate || plan.targetEndDate || null,
+    };
+    await api.updateProfile({
+      cefr: level,
+      dailyGoalMin: planToApply.dailyGoalMin,
+      studyWeekdays: planToApply.studyWeekdays,
+      targetEndDate: planToApply.targetEndDate || '',
+    });
+    state.level = level;
+    $('goal-select').value = String(planToApply.dailyGoalMin);
+    await api.applySchedulePlan(planToApply);
+    if (session.id) await api.endSession(session.id);
+    state.session = null;
+    state.history = [];
+    showStart();
+    markCurrentLevel();
+    loadSchedule();
+    renderHeroCopy();
+  } catch (e) {
+    fatal(e.message);
+  } finally {
+    $('placement-apply').disabled = false;
   }
 }
 
@@ -921,8 +1206,23 @@ $('level-grid').addEventListener('click', (event) => {
   }
 });
 $('level-check').addEventListener('click', () => {
-  beginLesson({ mode: 'conversation', topic: 'level check' }).catch((e) => fatal(e.message));
+  beginPlacement().catch((e) => fatal(e.message));
 });
+$('placement-manual').addEventListener('click', async () => {
+  if (!state.session) return;
+  const level = window.prompt('CEFR level (A1–C2)', state.level);
+  if (!level || !LEVELS.includes(level.trim().toUpperCase())) return;
+  try {
+    const updated = await api.placementManual(state.session.id, level.trim().toUpperCase());
+    state.session = updated;
+    applySession(updated);
+    showPlacementResult(updated);
+    updateChrome();
+  } catch (e) {
+    fatal(e.message);
+  }
+});
+$('placement-apply').addEventListener('click', () => applyPlacementPlan());
 $('open-grammar').addEventListener('click', () => showTab('grammar'));
 $('open-speaking').addEventListener('click', () => showTab('speaking'));
 $('open-listen').addEventListener('click', () => showTab('listening'));
@@ -1054,13 +1354,22 @@ function showLesson(session, messages) {
   state.history = messages || [];
   const list = $('messages');
   list.textContent = '';
-  for (const m of state.history) {
-    list.append(m.role === 'user' ? userMessage(m.text) : teacherMessage(m.reply, m.text));
-  }
+  const msgs = state.history || [];
+  const pending = placementPendingTeacherIndex(msgs);
+  msgs.forEach((m, i) => {
+    if (m.role === 'user') {
+      if (!placementUserAnswerInCard(session, msgs, i)) list.append(userMessage(m.text));
+    } else {
+      list.append(teacherMessage(m.reply, m.text, placementRenderOpts(session, i, msgs)));
+    }
+  });
+  syncPlacementComposer();
   showTab('lesson');
   applySession(session);
   if (session.mode === 'roleplay') refreshScenarioPanel();
   else updateStructuredPanel(session);
+  updatePlacementPanel(session);
+  showPlacementResult(session);
   syncVoiceControls();
   updateLessonStats();
   scrollDown();
@@ -1113,8 +1422,14 @@ function applySession(session) {
     ? 'Stay in the scene. A goal ticks off when your line includes the cue.'
     : session.mode === 'structured'
       ? 'Follow the phase: warm-up, input, practice, then feedback.'
-      : 'Write the next line in English, or press Speak.';
+      : session.mode === 'placement'
+        ? 'Answer in English when you can; the test adapts to your replies.'
+        : 'Write the next line in English, or press Speak.';
   updateStructuredPanel(session);
+  updatePlacementPanel(session);
+  showPlacementResult(session);
+  syncPlacementComposer();
+  updateChrome();
   $('hint-level').textContent = HINT_STEPS[Math.min(session.supportLevel, 3)];
   const index = LEVELS.indexOf(session.cefr);
   $('easier').disabled = state.busy || index <= 0;
@@ -1129,6 +1444,17 @@ function applySession(session) {
 function setBusy(busy) {
   state.busy = busy;
   for (const id of ['send', 'hint', 'end', 'talk']) $(id).disabled = busy;
+  for (const card of document.querySelectorAll('.placement-task.is-active')) {
+    const input = card.querySelector('.grammar-answer-input');
+    const send = card.querySelector('.placement-send');
+    const mic = card.querySelector('.placement-mic');
+    if (input && !card.classList.contains('is-locked')) input.disabled = busy;
+    if (send) send.disabled = busy;
+    if (mic) mic.disabled = busy;
+    for (const btn of card.querySelectorAll('.dow-btn, .placement-duration-chip')) {
+      if (!card.classList.contains('is-locked')) btn.disabled = busy;
+    }
+  }
   syncVoiceControls();
   if (state.session) applySession(state.session);
 }
@@ -1258,8 +1584,8 @@ async function startTalk() {
   recorder.ondataavailable = (event) => { if (event.data.size) talk.chunks.push(event.data); };
   recorder.start();
   setTalking(true);
-  setStatus('Listening… release the button or tap again');
-  talk.timer = setTimeout(() => { if (talk.recorder) stopTalk(); }, 30000);
+  setStatus('Recording… tap Speak again to send (up to 60 s)');
+  talk.timer = setTimeout(() => { if (talk.recorder) stopTalk(); }, 60000);
 }
 
 function stopTalk() {
@@ -1282,7 +1608,13 @@ function stopTalk() {
     try {
       const text = await transcribe(blob, state.session?.id);
       setStatus('');
-      turn(text, false, true);
+      if (placementSpeakInput) {
+        placementSpeakInput.value = text;
+        placementSpeakInput.focus();
+        placementSpeakInput = null;
+      } else {
+        turn(text, false, true);
+      }
     } catch (e) {
       setStatus(e.message, true);
     }
@@ -1293,35 +1625,40 @@ function stopTalk() {
 window.addEventListener('tutor-speak-error', (event) => setStatus(event.detail, true));
 
 const talkButton = $('talk');
-talkButton.addEventListener('pointerdown', (event) => {
+talkButton.addEventListener('click', (event) => {
   if (event.button !== 0 || state.busy) return;
+  if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt') return;
   event.preventDefault();
-  if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt') {
-    stopSpeaking();
-    state.voiceDuplex.pttDown();
-    setTalking(true);
-    setStatus('Listening… release the button');
-    return;
-  }
   if (talk.recorder) {
     stopTalk();
     return;
   }
-  talkButton.setPointerCapture(event.pointerId);
   startTalk();
+});
+talkButton.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || state.busy) return;
+  if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt') {
+    event.preventDefault();
+    stopSpeaking();
+    state.voiceDuplex.pttDown();
+    setTalking(true);
+    setStatus('Listening… release the button');
+    talkButton.setPointerCapture(event.pointerId);
+  }
 });
 talkButton.addEventListener('pointerup', () => {
   if (state.voiceDuplex && $('voice-duplex').checked && $('voice-mode').value === 'ptt' && talk.recorder == null) {
     state.voiceDuplex.pttUp();
     setTalking(false);
     setStatus('');
-    return;
   }
-  if (talk.recorder && Date.now() - talk.startedAt > 400) stopTalk();
 });
 talkButton.addEventListener('contextmenu', (event) => event.preventDefault());
 
-$('retry').addEventListener('click', () => turn('', false));
+$('retry').addEventListener('click', () => {
+  const { text, hint, aloud } = lastTurnDraft;
+  turn(text, hint, aloud);
+});
 
 function scrollDown() {
   const scroller = $('lesson-body');
@@ -1329,26 +1666,58 @@ function scrollDown() {
   scroller.scrollTop = scroller.scrollHeight;
 }
 
-async function turn(text, hint, aloud) {
+const lastTurnDraft = { text: '', hint: false, aloud: false };
+
+async function turn(text, hint, aloud, opts = {}) {
   if (state.busy || !state.session) return;
   setBusy(true);
   setStatus('The teacher is thinking…');
   const list = $('messages');
-  const shownUser = text ? userMessage(text) : null;
+  const placement = state.session.mode === 'placement' && !state.session.placementPlanReady;
+  const shownUser = !opts.userAlreadyShown && text ? userMessage(text) : null;
   if (shownUser) list.append(shownUser);
-  const placeholder = teacherPlaceholder();
+  const scheduleTurn = placement && isPlacementScheduleStep(state.session) && !opts.suppressScheduleWidget;
+  const placeholderOpts = placement ? {
+    placement: true,
+    suppressScheduleWidget: !!opts.suppressScheduleWidget,
+    stepMeta: placementRenderMeta(state.session, placementPendingTeacherIndex(state.history), state.history),
+    active: true,
+    scheduleWidget: scheduleTurn,
+    scheduleDefaults: {
+      weekdays: state.studyWeekdays, goalMin: state.goalMin, targetEndDate: state.targetEndDate,
+    },
+    onScheduleSubmit: scheduleTurn ? submitPlacementSchedule : null,
+    onSubmit: scheduleTurn ? null : submitPlacementAnswer,
+    onSpeak: scheduleTurn ? null : startPlacementSpeak,
+  } : {};
+  const placeholder = teacherPlaceholder(placeholderOpts);
   list.append(placeholder.node);
   scrollDown();
+  lastTurnDraft.text = text;
+  lastTurnDraft.hint = !!hint;
+  lastTurnDraft.aloud = !!aloud;
 
   let failure = null;
   try {
     await chatTurn({ sessionId: state.session.id, text, hint }, {
-      delta(chunk) { setStatus(''); placeholder.append(chunk); scrollDown(); },
+      delta(chunk) {
+        setStatus('');
+        if (!placement) {
+          placeholder.append(chunk);
+          scrollDown();
+        }
+      },
       final(payload) {
-        if (!shownUser && payload.user) placeholder.node.before(userMessage(payload.user.text));
-        placeholder.finish(payload.teacher.reply, payload.teacher.text);
+        if (!shownUser && !opts.userAlreadyShown && payload.user) {
+          placeholder.node.before(userMessage(payload.user.text));
+        }
         applySession(payload.session);
         syncHistoryFromTurn(payload);
+        const finishOpts = placement
+          ? placementRenderOpts(state.session, state.history.length - 1, state.history)
+          : {};
+        placeholder.finish(payload.teacher.reply, payload.teacher.text, finishOpts);
+        syncPlacementComposer();
         updateLessonStats();
         if (payload.scenario) renderScenarioProgress(payload.scenario);
         if (aloud) {
@@ -1364,8 +1733,14 @@ async function turn(text, hint, aloud) {
   if (failure) {
     placeholder.remove();
     if (shownUser) { shownUser.remove(); $('input').value = text; }
-    setStatus(failure, true, !text && !hint);
+    const placement = state.session?.mode === 'placement';
+    const retryable = placement || !text || hint;
+    const message = placement
+      ? `Не удалось получить ответ учителя. ${failure} Текст сообщения сохранён — нажмите Try again.`
+      : failure;
+    setStatus(message, true, retryable);
     refreshHealth();
+    if (placement) updatePlacementPanel(state.session);
   } else {
     setStatus('');
     if ($('health').classList.contains('down')) refreshHealth();
@@ -1375,7 +1750,9 @@ async function turn(text, hint, aloud) {
   setBusy(false);
   fitInput();
   scrollDown();
-  $('input').focus();
+  const cardInput = document.querySelector('.placement-task.is-active .grammar-answer-input:not(:disabled)');
+  if (cardInput) cardInput.focus();
+  else if (!placement) $('input').focus();
 }
 
 $('chat-form').addEventListener('submit', (event) => {
@@ -1453,8 +1830,9 @@ async function boot() {
   try {
     const profile = await api.profile();
     state.level = LEVELS_INFO[profile.cefr] ? profile.cefr : state.level;
-    state.goalMin = profile.dailyGoalMin || 10;
+    state.goalMin = profile.dailyGoalMin || 15;
     state.studyWeekdays = profile.studyWeekdays || state.studyWeekdays;
+    state.targetEndDate = profile.targetEndDate || null;
     $('goal-select').value = String(state.goalMin);
     await refreshGoal();
     const open = (await api.sessions()).find((s) => !s.endedAt);

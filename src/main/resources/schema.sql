@@ -112,6 +112,8 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS plan_state JSONB;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS study_weekdays JSONB NOT NULL DEFAULT '[1,2,3,4,5]'::jsonb;
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS target_end_date DATE;
+
 CREATE TABLE IF NOT EXISTS schedule_slots (
     id            BIGSERIAL PRIMARY KEY,
     user_id       BIGINT      NOT NULL REFERENCES users (id),

@@ -37,6 +37,8 @@ export const api = {
   startSession: (params) => request('POST', '/api/sessions', params),
   messages: (sessionId) => request('GET', `/api/sessions/${sessionId}/messages`),
   setLevel: (sessionId, cefr) => request('PUT', `/api/sessions/${sessionId}/level`, { cefr }),
+  placementManual: (sessionId, cefr) => request('POST', `/api/sessions/${sessionId}/placement/manual`, { cefr }),
+  applySchedulePlan: (plan) => request('POST', '/api/schedule/apply-plan', plan),
   errors: () => request('GET', '/api/errors'),
   review: () => request('GET', '/api/review'),
   rateReview: (slug, rating) => request('POST', `/api/review/${encodeURIComponent(slug)}`, { rating }),
@@ -110,6 +112,8 @@ export async function chatTurn({ sessionId, text, hint }, handlers) {
     if (!data.length) return;
     const payload = JSON.parse(data.join('\n'));
     if (event === 'delta') handlers.delta?.(payload.text);
+    else if (event === 'placement_prompt') handlers.placementPrompt?.(payload.text);
+    else if (event === 'placement_passage') handlers.placementPassage?.(payload.text);
     else if (event === 'final') { finished = true; handlers.final?.(payload); }
     else if (event === 'error') { finished = true; handlers.error?.(payload.error); }
   };

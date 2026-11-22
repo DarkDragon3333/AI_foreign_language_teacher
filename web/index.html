@@ -13,7 +13,7 @@
       document.documentElement.dataset.theme = 'sage';
     }
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=56">
+  <link rel="stylesheet" href="/css/app.css?v=69">
 </head>
 <body>
   <div class="app">
@@ -53,6 +53,9 @@
 
     <div class="workspace">
       <header class="topbar">
+        <div class="topbar-left">
+          <button id="placement-manual" type="button" class="text-btn placement-manual" hidden>Выбрать уровень вручную</button>
+        </div>
         <div class="topbar-right">
           <span id="range-label" class="range-label">English · A1–C2</span>
           <button id="exit-practice" type="button" class="exit-lesson" hidden>Exit drill</button>
@@ -212,16 +215,20 @@
                 <label class="goal-pick">Minutes per day
                   <select id="goal-select" aria-label="Daily goal in minutes">
                     <option value="5">5</option>
-                    <option value="10" selected>10</option>
-                    <option value="15">15</option>
+                    <option value="10">10</option>
+                    <option value="15" selected>15</option>
+                    <option value="20">20</option>
                     <option value="25">25</option>
+                    <option value="30">30</option>
+                    <option value="45">45</option>
+                    <option value="60">60</option>
                   </select>
                 </label>
-                <p class="goal-figure"><span id="goal-value">0</span> <span id="goal-of" class="goal-of">/ 10 min</span></p>
-                <div class="bar goal-bar" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
+                <p class="goal-figure"><span id="goal-value">0</span> <span id="goal-of" class="goal-of">/ 15 min</span></p>
+                <div class="bar goal-bar" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0">
                   <span id="goal-fill"></span>
                 </div>
-                <p id="goal-caption" class="goal-caption">0 of 10 minutes complete</p>
+                <p id="goal-caption" class="goal-caption">0 of 15 minutes complete</p>
               </article>
               <article class="path-card path-card-levels">
                 <h2>Your learning path</h2>
@@ -696,9 +703,17 @@
                     </div>
                     <p id="structured-time-left" class="structured-time muted"></p>
                   </div>
+                  <div id="placement-phase-wrap" class="structured-phases placement-phases" hidden>
+                    <div class="structured-phase-track" role="list" aria-label="Onboarding steps">
+                      <span data-placement-stage="test" class="structured-phase-seg" role="listitem">Level test</span>
+                      <span data-placement-stage="survey" class="structured-phase-seg" role="listitem">About you</span>
+                      <span data-placement-stage="plan" class="structured-phase-seg" role="listitem">Your plan</span>
+                    </div>
+                    <p id="placement-step-label" class="structured-time muted"></p>
+                  </div>
                 </div>
                 <div class="lesson-head-controls">
-                  <div class="level-stepper" role="group" aria-label="Lesson level">
+                  <div id="lesson-level-wrap" class="level-stepper" role="group" aria-label="Lesson level">
                     <button id="easier" type="button">Easier</button>
                     <span class="level-now"><span id="lesson-level" class="chip" aria-live="polite"></span></span>
                     <button id="harder" type="button">Harder</button>
@@ -719,6 +734,24 @@
               <div id="messages" class="messages" aria-live="polite"></div>
               <p id="status" class="status" hidden><span id="status-text"></span> <button id="retry" type="button" hidden>Try again</button></p>
             </div>
+
+            <article id="placement-result" class="placement-result" hidden>
+              <h2>Your learning plan</h2>
+              <p id="placement-result-lead" class="muted"></p>
+              <p class="placement-rec-row"><span id="placement-recommended-badge" class="placement-recommended" hidden></span></p>
+              <label class="placement-level-label">CEFR level
+                <select id="placement-level-pick" aria-label="CEFR level">
+                  <option value="A1">A1 · Beginner</option>
+                  <option value="A2">A2 · Elementary</option>
+                  <option value="B1">B1 · Intermediate</option>
+                  <option value="B2">B2 · Upper intermediate</option>
+                  <option value="C1">C1 · Advanced</option>
+                  <option value="C2">C2 · Proficient</option>
+                </select>
+              </label>
+              <p id="placement-plan-summary" class="placement-plan-summary"></p>
+              <button id="placement-apply" type="button" class="lime">Применить план</button>
+            </article>
 
             <form id="chat-form" class="composer lesson-composer">
               <textarea id="input" rows="2" maxlength="2000" placeholder="Write in English. Enter sends, Shift+Enter starts a new line"></textarea>
@@ -764,6 +797,10 @@
         <button type="button" data-dow="7" class="dow-btn">Sun</button>
       </div>
       <p id="cal-days-hint" class="cal-days-hint" hidden>Pick at least one day.</p>
+      <div class="cal-target-section">
+        <p class="muted" style="margin:0 0 6px;font-size:13px">Target end date</p>
+        <div id="cal-target-end-wrap" class="cal-target-picker-wrap" aria-label="Target end date"></div>
+      </div>
       <div class="cal-dialog-actions">
         <button type="button" id="cal-settings-close" class="cal-close">Close</button>
         <button type="submit" id="cal-settings-save" class="cal-save">Save days</button>
@@ -771,6 +808,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="/js/main.js?v=41"></script>
+  <script type="module" src="/js/main.js?v=57"></script>
 </body>
 </html>
