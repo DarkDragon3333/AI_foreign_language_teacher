@@ -166,6 +166,7 @@ function focusConversationStart() {
 
 let scheduleLoad = 0;
 let weekdayDraft = [];
+let openTodayOnFirstLoad = true;
 
 function isoDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -348,6 +349,12 @@ async function loadSchedule() {
     if (ticket !== scheduleLoad) return;
     state.studyWeekdays = data.studyWeekdays || [1, 2, 3, 4, 5];
     state.monthSlots = new Map((data.slots || []).map((slot) => [slot.date, slot]));
+    if (openTodayOnFirstLoad) {
+      openTodayOnFirstLoad = false;
+      const today = localIsoDate();
+      const viewing = isoDate(year, month, 1).slice(0, 8);
+      if (!state.selectedDate && today.startsWith(viewing)) state.selectedDate = today;
+    }
     renderCalendar();
     if (state.selectedDate) renderDayPanel(state.selectedDate);
   } catch (e) {
