@@ -34,7 +34,8 @@ class PlacementLessonServiceTest {
 
     @Test
     void advancesThroughTestBlocks() {
-        AtomicReference<SessionPlanState> plan = new AtomicReference<>(PlacementPlanState.start());
+        AtomicReference<SessionPlanState> plan = new AtomicReference<>(
+                new PlacementPlanState(PlacementStage.TEST, 0, 0, 0, null, null));
         PlacementLessonService service = service(plan);
         LessonSession session = baseSession(plan.get());
         LessonSession next = service.advanceAfterUser(session, "My answer here.", "What is your name?");
@@ -46,7 +47,8 @@ class PlacementLessonServiceTest {
     @Test
     void stepIndexFollowsStageNotModelText() {
         PlacementLessonService service = new PlacementLessonService(mock(SessionRepository.class),
-                mock(ProfileRepository.class), new PlacementMetaParser(new ObjectMapper()), new ObjectMapper());
+                mock(ProfileRepository.class), new PlacementMetaParser(new ObjectMapper()), new ObjectMapper(),
+                new PlacementBank());
         var testMid = new PlacementPlanState(PlacementStage.TEST, 1, 0, 0, null, null);
         assertEquals(3, PlacementLessonService.stepIndex(testMid));
         var surveyFirst = new PlacementPlanState(PlacementStage.SURVEY, 4, 0, 0, null, null);
@@ -131,7 +133,7 @@ class PlacementLessonServiceTest {
             return null;
         }).when(sessions).updatePlanState(org.mockito.ArgumentMatchers.eq(1L), any());
         return new PlacementLessonService(sessions, mock(ProfileRepository.class),
-                new PlacementMetaParser(new ObjectMapper()), new ObjectMapper());
+                new PlacementMetaParser(new ObjectMapper()), new ObjectMapper(), new PlacementBank());
     }
 
     private static LessonSession baseSession(SessionPlanState plan) {

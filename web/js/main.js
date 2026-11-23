@@ -1,9 +1,9 @@
-import { api, chatTurn, transcribe } from './api.js?v=22';
+import { api, chatTurn, transcribe } from './api.js?v=23';
 import {
   userMessage, teacherMessage, teacherPlaceholder, speakMessage, stopSpeaking,
-  lockPlacementCard, lockPlacementScheduleCard,
+  lockPlacementCard, lockPlacementScheduleCard, placementLadderCard, placementOfferCard,
   createBrandDatePicker, isoLocalDate,
-} from './render.js?v=30';
+} from './render.js?v=31';
 import { openReview, refreshReviewCount } from './review.js?v=19';
 import { VoiceDuplex } from './voice.js?v=18';
 import { stopActivePractice, wirePracticeControls } from './practice.js?v=31';
@@ -874,6 +874,88 @@ function syncPlacementComposer() {
   form.classList.toggle('placement-composer-slim', on);
 }
 
+function placementLadderMeta(session) {
+  const idx = session?.placementStepIndex || 1;
+  const total = session?.placementStepTotal || 8;
+  const label = session?.placementStepLabel || 'Level check';
+  return `${idx} / ${total} · ${label}`;
+}
+
+function syncPlacementLadderCard() {
+  const list = $('messages');
+  if (!list) return;
+  list.querySelectorAll('.placement-ladder, .placement-offer').forEach((node) => node.remove());
+  const session = state.session;
+  if (!session || session.mode !== 'placement' || session.placementPlanReady) return;
+  if (session.placementOffer) {
+    list.append(placementOfferCard({
+      level: session.placementOffer.level,
+      note: session.placementOffer.note,
+      onAccept: acceptPlacementLevel,
+      onRefine: startPlacementRefine,
+    }));
+  } else if (session.placementLadderItem) {
+    const item = session.placementLadderItem;
+    list.append(placementLadderCard({
+      id: item.id,
+      stem: item.stem,
+      choices: item.choices,
+      stepMeta: placementLadderMeta(session),
+      onChoose: submitPlacementLadder,
+    }));
+  }
+  scrollDown();
+}
+
+async function submitPlacementLadder(itemId, choice) {
+  if (state.busy || !state.session) return;
+  setBusy(true);
+  let session = null;
+  try {
+    session = await api.placementLadder(state.session.id, itemId, choice);
+    applySession(session);
+    syncPlacementLadderCard();
+  } catch (e) {
+    fatal(e.message);
+    syncPlacementLadderCard();
+  } finally {
+    setBusy(false);
+  }
+  if (session?.placementStage === 'survey') await turn('', false);
+}
+
+async function acceptPlacementLevel() {
+  if (state.busy || !state.session) return;
+  setBusy(true);
+  let session = null;
+  try {
+    session = await api.placementLadderAccept(state.session.id);
+    applySession(session);
+    syncPlacementLadderCard();
+  } catch (e) {
+    fatal(e.message);
+    syncPlacementLadderCard();
+  } finally {
+    setBusy(false);
+  }
+  if (session?.placementStage === 'survey') await turn('', false);
+}
+
+async function startPlacementRefine() {
+  if (state.busy || !state.session) return;
+  setBusy(true);
+  try {
+    const session = await api.placementLadderRefine(state.session.id);
+    applySession(session);
+    syncPlacementLadderCard();
+  } catch (e) {
+    fatal(e.message);
+    syncPlacementLadderCard();
+  } finally {
+    setBusy(false);
+  }
+}
+
 function submitPlacementAnswer(text, card) {
   if (state.busy || !state.session) return;
   const trimmed = (text || '').trim();
@@ -1143,6 +1225,7 @@ async function beginLesson(opts = {}) {
     state.scenarioProgress = null;
     resetLessonClock(session.id);
     showLesson(session, []);
+    if (session.placementLadderItem || session.placementOffer) return;
     await turn('', false);
   } finally {
     state.starting = false;
@@ -1158,7 +1241,9 @@ function resumeLesson() {
     return;
   }
   showLesson(state.session, state.history || []);
-  if (!(state.history || []).length) turn('', false);
+  if (!(state.history || []).length
+      && !state.session.placementLadderItem
+      && !state.session.placementOffer) turn('', false);
 }
 
 $('nav-learn').addEventListener('click', () => showTab('learn'));
@@ -1370,6 +1455,7 @@ function showLesson(session, messages) {
   else updateStructuredPanel(session);
   updatePlacementPanel(session);
   showPlacementResult(session);
+  syncPlacementLadderCard();
   syncVoiceControls();
   updateLessonStats();
   scrollDown();

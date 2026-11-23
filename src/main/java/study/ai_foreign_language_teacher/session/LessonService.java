@@ -130,6 +130,18 @@ public class LessonService {
         }
     }
 
+    public LessonSession answerPlacementLadder(long sessionId, String itemId, String choice) {
+        return placement.submitLadderAnswer(getSession(sessionId), itemId, choice);
+    }
+
+    public LessonSession acceptPlacementLevel(long sessionId) {
+        return placement.acceptPreliminary(getSession(sessionId));
+    }
+
+    public LessonSession refinePlacement(long sessionId) {
+        return placement.startRefine(getSession(sessionId));
+    }
+
     public LessonSession applyPlacementManual(long sessionId, String cefr) {
         LessonSession session = getSession(sessionId);
         if (session.mode() != LessonMode.PLACEMENT) {

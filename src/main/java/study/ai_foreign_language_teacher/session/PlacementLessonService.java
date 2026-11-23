@@ -62,13 +62,21 @@ public class PlacementLessonService {
     private final ProfileRepository profiles;
     private final PlacementMetaParser metaParser;
     private final ObjectMapper mapper;
+    private final PlacementBank bank;
 
     public PlacementLessonService(SessionRepository sessions, ProfileRepository profiles,
-                                  PlacementMetaParser metaParser, ObjectMapper mapper) {
+                                  PlacementMetaParser metaParser, ObjectMapper mapper, PlacementBank bank) {
         this.sessions = sessions;
         this.profiles = profiles;
         this.metaParser = metaParser;
         this.mapper = mapper;
+        this.bank = bank == null ? new PlacementBank() : bank;
+    }
+
+    public record LadderItemView(String id, String stem, List<String> choices) {
+    }
+
+    public record OfferView(String level, String boundaryLabel, String note) {
     }
 
     public record PlacementView(
@@ -78,11 +86,13 @@ public class PlacementLessonService {
             int stepTotal,
             boolean planReady,
             String assessedLevel,
-            LearningPlan learningPlan) {
+            LearningPlan learningPlan,
+            LadderItemView ladderItem,
+            OfferView offer) {
     }
 
     public PlacementPlanState initPlan() {
-        return PlacementPlanState.start();
+        return PlacementLadder.begin(bank);
     }
 
     public Optional<PlacementView> view(LessonSession session) {
@@ -98,25 +108,59 @@ public class PlacementLessonService {
 
     PlacementView toView(PlacementPlanState plan) {
         int index = stepIndex(plan);
-        int total = PLACEMENT_STEP_TOTAL;
+        int total = stepTotal(plan);
         String label = stepLabel(plan);
         boolean ready = plan.stage() == PlacementStage.READY && plan.learningPlan() != null;
         return new PlacementView(stageForUi(plan), label, index, total, ready,
-                plan.assessedLevel(), plan.learningPlan());
+                plan.assessedLevel(), plan.learningPlan(), ladderItem(plan), offer(plan));
+    }
+
+    private LadderItemView ladderItem(PlacementPlanState plan) {
+        if (plan.stage() != PlacementStage.LADDER && plan.stage() != PlacementStage.REFINE) {
+            return null;
+        }
+        PlacementBank.Item item = bank.byId(plan.currentItemId());
+        if (item == null || item.choices() == null) {
+            return null;
+        }
+        return new LadderItemView(item.id(), item.stem(), List.copyOf(item.choices()));
+    }
+
+    private static OfferView offer(PlacementPlanState plan) {
+        if (plan.stage() != PlacementStage.OFFER) {
+            return null;
+        }
+        String boundary = plan.boundary() == null ? "" : plan.boundary();
+        String words = boundary.replace('-', '/');
+        String note = words.isBlank()
+                ? "This is a preliminary result. A neighbouring level is still possible."
+                : "This is a preliminary result. " + words.replace("/", " or ") + " is still possible.";
+        return new OfferView(plan.preliminaryLevel(), words, note);
     }
 
     /** Шаг 1–8 тест, 9–10 анкета, 11 план — только из plan_state, не из текста модели. */
     static int stepIndex(PlacementPlanState plan) {
         return switch (plan.stage()) {
             case TEST -> plan.testBlock() * 2 + plan.testQuestion() + 1;
+            case LADDER -> Math.min(PlacementLadder.LADDER_LIMIT, plan.hits().size() + 1);
+            case OFFER -> PlacementLadder.LADDER_LIMIT;
+            case REFINE -> Math.min(PlacementLadder.REFINE_LIMIT, plan.refineAsked() + 1);
             case SURVEY -> 8 + plan.surveyQuestion() + 1;
             case PLAN, READY -> PLACEMENT_STEP_TOTAL;
         };
     }
 
+    static int stepTotal(PlacementPlanState plan) {
+        return switch (plan.stage()) {
+            case LADDER, OFFER -> PlacementLadder.LADDER_LIMIT;
+            case REFINE -> PlacementLadder.REFINE_LIMIT;
+            default -> PLACEMENT_STEP_TOTAL;
+        };
+    }
+
     static String stageForUi(PlacementPlanState plan) {
         return switch (plan.stage()) {
-            case TEST -> PlacementStage.TEST.json();
+            case TEST, LADDER, OFFER, REFINE -> PlacementStage.TEST.json();
             case SURVEY -> PlacementStage.SURVEY.json();
             case PLAN, READY -> PlacementStage.PLAN.json();
         };
@@ -126,6 +170,8 @@ public class PlacementLessonService {
         return switch (plan.stage()) {
             case TEST -> "Level test · " + TEST_BLOCKS[Math.min(plan.testBlock(), TEST_BLOCKS.length - 1)]
                     + " (" + (plan.testQuestion() + 1) + "/2)";
+            case LADDER, OFFER -> "Level check";
+            case REFINE -> "Finer check";
             case SURVEY -> "About you · " + SURVEY_TOPICS[Math.min(plan.surveyQuestion(), SURVEY_TOPICS.length - 1)];
             case PLAN -> "Your plan";
             case READY -> "Your plan is ready";
@@ -464,7 +510,8 @@ public class PlacementLessonService {
             return session;
         }
         PlacementPlanState next = plan;
-        if (parsed.assessedLevel() != null && !parsed.assessedLevel().isBlank()) {
+        if ((next.assessedLevel() == null || next.assessedLevel().isBlank())
+                && parsed.assessedLevel() != null && !parsed.assessedLevel().isBlank()) {
             try {
                 String level = floorAssessedLevel(parsed.assessedLevel(), history);
                 next = next.withAssessedLevel(Cefr.parse(level).name());
@@ -497,6 +544,36 @@ public class PlacementLessonService {
         List<LearningPlan.MonthSlot> slots = buildMonthSlots(days, targetEnd);
         String endIso = targetEnd == null ? null : targetEnd.toString();
         return new LearningPlan(days, goal, slots, endIso);
+    }
+
+    public LessonSession submitLadderAnswer(LessonSession session, String itemId, String choice) {
+        requirePlacement(session);
+        PlacementPlanState next = PlacementLadder.answer(session.placementPlan(), bank, itemId, choice);
+        return storePlan(session, next);
+    }
+
+    public LessonSession acceptPreliminary(LessonSession session) {
+        requirePlacement(session);
+        return storePlan(session, PlacementLadder.accept(session.placementPlan()));
+    }
+
+    public LessonSession startRefine(LessonSession session) {
+        requirePlacement(session);
+        return storePlan(session, PlacementLadder.beginRefine(session.placementPlan(), bank));
+    }
+
+    private static void requirePlacement(LessonSession session) {
+        if (session.mode() != LessonMode.PLACEMENT || session.placementPlan() == null) {
+            throw new IllegalArgumentException("Session is not a placement onboarding");
+        }
+    }
+
+    private LessonSession storePlan(LessonSession session, PlacementPlanState next) {
+        sessions.updatePlanState(session.id(), next);
+        if (next.stage() == PlacementStage.SURVEY && next.assessedLevel() != null && !next.assessedLevel().isBlank()) {
+            sessions.updateCefr(session.id(), Cefr.parse(next.assessedLevel()));
+        }
+        return sessions.find(session.id()).orElse(session.withPlanState(next));
     }
 
     public LessonSession applyManualLevel(LessonSession session, UserProfile profile, String cefr) {
@@ -574,10 +651,14 @@ public class PlacementLessonService {
     public String stepPromptBlock(PlacementPlanState plan) {
         return switch (plan.stage()) {
             case TEST -> testStepPrompt(plan);
+            case LADDER, OFFER, REFINE -> """
+                    PLACEMENT STEP: Closed questions are shown by the app. answer_en empty. follow_up_question empty.
+                    """;
             case SURVEY -> surveyStepPrompt(plan);
             case PLAN -> """
                     PLACEMENT STEP: All test and survey answers are collected.
-                    Infer CEFR A1–C2 from the conversation. Fill placement_meta.assessed_level.
+                    The level is already decided: %s. Put that exact code in placement_meta.assessed_level. Do not change it.
+                    Infer CEFR A1–C2 from the conversation only when the decided level above is empty. Fill placement_meta.assessed_level.
                     CEFR rubric (assessed_level — judge grammar and coherence, not spelling alone):
                     - A1–A2: single words or memorised simple phrases; no complex sentences or linkers (because, although, which).
                     - B1: connected multi-clause sentences, subordination, can express an opinion; minor typos or ending slips are fine.
@@ -589,7 +670,8 @@ public class PlacementLessonService {
                     Use the learner's confirmed study_weekdays, daily_goal_min, and target_end_date from the survey (already saved in profile); do not invent 1 day per week.
                     LANGUAGE: teacher lines in English ONLY (never Spanish or other languages).
                     In answer_en, summarise the level and plan in 2–3 short sentences; follow_up_question empty.
-                    """;
+                    """.formatted(plan.assessedLevel() == null || plan.assessedLevel().isBlank()
+                    ? "empty" : plan.assessedLevel());
             case READY -> """
                     PLACEMENT STEP: Plan is ready. Encourage the learner to tap Apply plan on screen. follow_up_question empty.
                     """;

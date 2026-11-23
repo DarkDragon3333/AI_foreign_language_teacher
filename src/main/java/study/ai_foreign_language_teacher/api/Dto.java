@@ -86,7 +86,8 @@ public final class Dto {
                               String lessonPhase, String phaseLabel, Integer minutesRemaining, Integer targetMinutes,
                               String placementStage, String placementStepLabel, Integer placementStepIndex,
                               Integer placementStepTotal, Boolean placementPlanReady, String placementAssessedLevel,
-                              LearningPlanView placementPlan) {
+                              LearningPlanView placementPlan, PlacementLadderItemView placementLadderItem,
+                              PlacementOfferView placementOffer) {
         static SessionView of(LessonSession s) {
             return of(s, (LessonService.SessionExtras) null);
         }
@@ -110,6 +111,8 @@ public final class Dto {
             Boolean placementPlanReady = null;
             String placementAssessedLevel = null;
             LearningPlanView placementPlan = null;
+            PlacementLadderItemView placementLadderItem = null;
+            PlacementOfferView placementOffer = null;
             if (extras != null && extras.placement() != null) {
                 PlacementLessonService.PlacementView p = extras.placement();
                 placementStage = p.stage();
@@ -119,13 +122,31 @@ public final class Dto {
                 placementPlanReady = p.planReady();
                 placementAssessedLevel = p.assessedLevel();
                 placementPlan = LearningPlanView.of(p.learningPlan());
+                if (p.ladderItem() != null) {
+                    placementLadderItem = new PlacementLadderItemView(
+                            p.ladderItem().id(), p.ladderItem().stem(), p.ladderItem().choices());
+                }
+                if (p.offer() != null) {
+                    placementOffer = new PlacementOfferView(
+                            p.offer().level(), p.offer().boundaryLabel(), p.offer().note());
+                }
             }
             return new SessionView(s.id(), s.mode().json(), s.topic(), s.cefr().name(), s.supportLevel(),
                     s.startedAt(), s.endedAt(), s.model(), SessionSummaryView.of(s.summary()),
                     lessonPhase, phaseLabel, minutesRemaining, targetMinutes,
                     placementStage, placementStepLabel, placementStepIndex, placementStepTotal,
-                    placementPlanReady, placementAssessedLevel, placementPlan);
+                    placementPlanReady, placementAssessedLevel, placementPlan,
+                    placementLadderItem, placementOffer);
         }
+    }
+
+    public record PlacementLadderAnswer(String itemId, String choice) {
+    }
+
+    public record PlacementLadderItemView(String id, String stem, java.util.List<String> choices) {
+    }
+
+    public record PlacementOfferView(String level, String boundaryLabel, String note) {
     }
 
     public record DailyProgressView(int minutesDone, int goalMinutes, boolean goalMet) {

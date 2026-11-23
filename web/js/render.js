@@ -73,6 +73,53 @@ function el(tag, className, text) {
   return node;
 }
 
+const LADDER_LETTERS = ['A', 'B', 'C', 'D'];
+
+export function placementLadderCard({ id, stem, choices, stepMeta, onChoose }) {
+  const card = el('article', 'placement-task placement-ladder review-card grammar-card is-active');
+  card.append(el('p', 'muted placement-task-meta', stepMeta || ''));
+  card.append(el('p', 'review-prompt placement-task-prompt', stem || ''));
+  const wrap = el('div', 'grammar-choices placement-choices');
+  (choices || []).forEach((text, index) => {
+    const letter = LADDER_LETTERS[index] || String(index + 1);
+    const btn = el('button', 'placement-choice grammar-choice-chip', `${letter}) ${text}`);
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      if (card.classList.contains('is-locked')) return;
+      card.classList.add('is-locked');
+      card.classList.remove('is-active');
+      wrap.querySelectorAll('button').forEach((node) => { node.disabled = true; });
+      onChoose(id, letter);
+    });
+    wrap.append(btn);
+  });
+  card.append(wrap);
+  return card;
+}
+
+export function placementOfferCard({ level, note, onAccept, onRefine }) {
+  const card = el('article', 'placement-task placement-offer review-card grammar-card is-active');
+  card.append(el('p', 'muted placement-task-meta', 'Preliminary result'));
+  card.append(el('p', 'placement-offer-level', level || ''));
+  card.append(el('p', 'placement-offer-note', note || ''));
+  const row = el('div', 'placement-offer-actions');
+  const keep = el('button', 'solid', 'Оставить этот уровень');
+  const refine = el('button', 'lime', 'Уточнить');
+  keep.type = 'button';
+  refine.type = 'button';
+  const lock = () => {
+    keep.disabled = true;
+    refine.disabled = true;
+    card.classList.add('is-locked');
+    card.classList.remove('is-active');
+  };
+  keep.addEventListener('click', () => { lock(); onAccept(); });
+  refine.addEventListener('click', () => { lock(); onRefine(); });
+  row.append(keep, refine);
+  card.append(row);
+  return card;
+}
+
 export function userMessage(text) {
   const wrap = el('div', 'msg user');
   wrap.append(el('div', 'bubble', text));

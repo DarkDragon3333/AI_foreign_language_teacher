@@ -267,6 +267,24 @@ body {
 }
 .messages .placement-task.is-active { box-shadow: var(--shadow); }
 .messages .placement-task.is-locked { opacity: 0.92; }
+.placement-offer-level {
+  margin: 4px 0 8px;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.placement-offer-note {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.placement-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
 .placement-task-meta { margin: 0 0 6px; font-size: 13px; }
 .placement-task-prompt { white-space: pre-wrap; }
 .placement-task .placement-choices.grammar-choices {

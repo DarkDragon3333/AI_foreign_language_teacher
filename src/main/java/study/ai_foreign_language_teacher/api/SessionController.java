@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import study.ai_foreign_language_teacher.api.Dto.LevelRequest;
+import study.ai_foreign_language_teacher.api.Dto.PlacementLadderAnswer;
 import study.ai_foreign_language_teacher.api.Dto.MessageView;
 import study.ai_foreign_language_teacher.api.Dto.SessionView;
 import study.ai_foreign_language_teacher.api.Dto.StartSessionRequest;
@@ -73,6 +74,24 @@ public class SessionController {
     @PostMapping("/{id}/end")
     public SessionView end(@PathVariable long id) {
         return view(lessons.endSession(id));
+    }
+
+    @PostMapping("/{id}/placement/ladder")
+    public SessionView placementLadder(@PathVariable long id, @RequestBody PlacementLadderAnswer request) {
+        if (request == null || request.itemId() == null || request.itemId().isBlank()) {
+            throw new IllegalArgumentException("itemId is required");
+        }
+        return view(lessons.answerPlacementLadder(id, request.itemId(), request.choice()));
+    }
+
+    @PostMapping("/{id}/placement/ladder/accept")
+    public SessionView placementLadderAccept(@PathVariable long id) {
+        return view(lessons.acceptPlacementLevel(id));
+    }
+
+    @PostMapping("/{id}/placement/ladder/refine")
+    public SessionView placementLadderRefine(@PathVariable long id) {
+        return view(lessons.refinePlacement(id));
     }
 
   /** Пропуск теста: ручной CEFR и типовой план. */

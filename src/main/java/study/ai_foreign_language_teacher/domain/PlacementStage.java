@@ -5,6 +5,9 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum PlacementStage {
     TEST,
+    LADDER,
+    OFFER,
+    REFINE,
     SURVEY,
     PLAN,
     READY;
